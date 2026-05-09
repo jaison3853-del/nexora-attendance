@@ -3,6 +3,8 @@ import { db } from '../firebase/config';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
+import { motion } from 'framer-motion';
+import { Calendar, FileText, Send } from 'lucide-react';
 
 const LeaveRequest = () => {
   const { user } = useAuth();
@@ -10,7 +12,7 @@ const LeaveRequest = () => {
     startDate: '',
     endDate: '',
     reason: '',
-    type: 'Sick Leave'
+    type: 'Casual Leave'
   });
 
   const handleSubmit = async (e) => {
@@ -19,55 +21,94 @@ const LeaveRequest = () => {
       await addDoc(collection(db, 'leaves'), {
         ...formData,
         userId: user.uid,
-        userName: user.displayName || 'Staff',
+        // ഇവിടെ ശ്രദ്ധിക്കുക: user.name ആണ് നിങ്ങളുടെ സിസ്റ്റത്തിലുള്ളത്
+        userName: user?.name || user?.displayName || 'Staff Member',
         status: 'pending',
         createdAt: serverTimestamp(),
       });
       toast.success('ലീവ് അപേക്ഷ സമർപ്പിച്ചു!');
-      setFormData({ startDate: '', endDate: '', reason: '', type: 'Sick Leave' });
+      setFormData({ startDate: '', endDate: '', reason: '', type: 'Casual Leave' });
     } catch (error) {
       toast.error('അപേക്ഷിക്കുന്നതിൽ പിശക് സംഭവിച്ചു');
     }
   };
 
   return (
-    <div className="p-6 max-w-md mx-auto bg-slate-800 rounded-xl shadow-md mt-10">
-      <h2 className="text-2xl font-bold text-white mb-6">Apply for Leave</h2>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block text-gray-300">Leave Type</label>
-          <select 
-            className="w-full p-2 rounded bg-slate-700 text-white border border-slate-600"
-            value={formData.type}
-            onChange={(e) => setFormData({...formData, type: e.target.value})}
+    <motion.div 
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="p-6 max-w-xl mx-auto"
+    >
+      <div className="glass rounded-2xl p-8 border border-white/10">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="p-3 rounded-xl bg-violet-500/20 text-violet-400">
+            <Calendar size={24} />
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-text-bright">Apply for Leave</h2>
+            <p className="text-xs text-text-muted">Fill in the details below</p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="space-y-2">
+            <label className="text-xs font-mono uppercase text-muted tracking-widest">Leave Type</label>
+            <select 
+              className="input-field w-full"
+              value={formData.type}
+              onChange={(e) => setFormData({...formData, type: e.target.value})}
+            >
+              <option>Casual Leave</option>
+              <option>Sick Leave</option>
+              <option>Duty Leave</option>
+              <option>Other</option>
+            </select>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-xs font-mono uppercase text-muted tracking-widest">Start Date</label>
+              <input 
+                type="date" 
+                required 
+                className="input-field w-full"
+                value={formData.startDate}
+                onChange={(e) => setFormData({...formData, startDate: e.target.value})} 
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-mono uppercase text-muted tracking-widest">End Date</label>
+              <input 
+                type="date" 
+                required 
+                className="input-field w-full"
+                value={formData.endDate}
+                onChange={(e) => setFormData({...formData, endDate: e.target.value})} 
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-xs font-mono uppercase text-muted tracking-widest">Reason</label>
+            <textarea 
+              required 
+              className="input-field w-full min-h-[100px]" 
+              placeholder="Why do you need leave?"
+              value={formData.reason}
+              onChange={(e) => setFormData({...formData, reason: e.target.value})}
+            ></textarea>
+          </div>
+
+          <button 
+            type="submit" 
+            className="btn-primary w-full flex items-center justify-center gap-2 py-3"
           >
-            <option>Sick Leave</option>
-            <option>Casual Leave</option>
-            <option>Other</option>
-          </select>
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-gray-300">Start Date</label>
-            <input type="date" required className="w-full p-2 rounded bg-slate-700 text-white" 
-              onChange={(e) => setFormData({...formData, startDate: e.target.value})} />
-          </div>
-          <div>
-            <label className="block text-gray-300">End Date</label>
-            <input type="date" required className="w-full p-2 rounded bg-slate-700 text-white" 
-              onChange={(e) => setFormData({...formData, endDate: e.target.value})} />
-          </div>
-        </div>
-        <div>
-          <label className="block text-gray-300">Reason</label>
-          <textarea required className="w-full p-2 rounded bg-slate-700 text-white" rows="3"
-            onChange={(e) => setFormData({...formData, reason: e.target.value})}></textarea>
-        </div>
-        <button type="submit" className="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700 transition">
-          Submit Request
-        </button>
-      </form>
-    </div>
+            <Send size={18} />
+            Submit Application
+          </button>
+        </form>
+      </div>
+    </motion.div>
   );
 };
 
