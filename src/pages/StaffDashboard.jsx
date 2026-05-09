@@ -1,11 +1,11 @@
 // src/pages/StaffDashboard.jsx
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle, XCircle, Clock, TrendingUp, Calendar, MapPin, Zap } from 'lucide-react';
+import { CheckCircle, XCircle, Clock, TrendingUp, Calendar, MapPin, Zap, FileText } from 'lucide-react';
+import { Link } from 'react-router-dom'; // ലിങ്ക് ഇംപോർട്ട് ചെയ്തു
 import { useAuth } from '../context/AuthContext';
 import { useClock } from '../hooks/useClock';
 import { getTodayAttendance, getUserAttendance, getAttendanceStats } from '../services/attendanceService';
-import { format, subDays } from 'date-fns';
 import MarkAttendance from '../components/attendance/MarkAttendance';
 import StatCard from '../components/ui/StatCard';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -78,30 +78,52 @@ export default function StaffDashboard() {
         <StatCard icon={XCircle} label="Absent" value={stats.absent} color="rose" delay={0.15} />
       </div>
 
-      {/* Attendance % banner */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.2 }}
-        className="glass rounded-2xl p-5"
-      >
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <TrendingUp size={16} className="text-violet-400" />
-            <span className="text-sm font-semibold text-text-bright">Attendance Rate</span>
+      {/* Attendance % banner & Quick Actions */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.2 }}
+          className="glass rounded-2xl p-5 md:col-span-2"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <TrendingUp size={16} className="text-violet-400" />
+              <span className="text-sm font-semibold text-text-bright">Attendance Rate</span>
+            </div>
+            <span className="font-display font-bold text-2xl text-gradient-cyan">{stats.percentage}%</span>
           </div>
-          <span className="font-display font-bold text-2xl text-gradient-cyan">{stats.percentage}%</span>
-        </div>
-        <div className="h-2 bg-border/60 rounded-full overflow-hidden">
-          <motion.div
-            initial={{ width: 0 }}
-            animate={{ width: `${stats.percentage}%` }}
-            transition={{ duration: 1, delay: 0.3, ease: 'easeOut' }}
-            className="h-full bg-gradient-to-r from-cyan-500 to-violet-500 rounded-full"
-          />
-        </div>
-        <p className="text-xs text-text-muted mt-2 font-mono">{stats.present + stats.late} of {stats.total} working days attended</p>
-      </motion.div>
+          <div className="h-2 bg-border/60 rounded-full overflow-hidden">
+            <motion.div
+              initial={{ width: 0 }}
+              animate={{ width: `${stats.percentage}%` }}
+              transition={{ duration: 1, delay: 0.3, ease: 'easeOut' }}
+              className="h-full bg-gradient-to-r from-cyan-500 to-violet-500 rounded-full"
+            />
+          </div>
+          <p className="text-xs text-text-muted mt-2 font-mono">{stats.present + stats.late} of {stats.total} working days attended</p>
+        </motion.div>
+
+        {/* Apply Leave Button Card */}
+        <motion.div
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.2 }}
+        >
+          <Link 
+            to="/leave-request"
+            className="glass rounded-2xl p-5 h-full flex flex-col justify-center items-center gap-3 hover:bg-white/5 transition-all border border-violet-500/20 group"
+          >
+            <div className="p-3 rounded-full bg-violet-500/10 group-hover:bg-violet-500/20 transition-colors">
+              <FileText className="text-violet-400" size={24} />
+            </div>
+            <div className="text-center">
+              <span className="block text-sm font-bold text-text-bright">Apply for Leave</span>
+              <span className="text-[10px] text-text-muted uppercase tracking-tighter">Submit Request</span>
+            </div>
+          </Link>
+        </motion.div>
+      </div>
 
       {/* Mark Attendance */}
       <MarkAttendance onMarked={handleMarked} alreadyMarked={!!todayRecord} />
