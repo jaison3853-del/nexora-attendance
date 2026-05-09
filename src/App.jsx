@@ -13,21 +13,26 @@ import AttendanceHistory from './pages/AttendanceHistory';
 import ProfileSettings from './pages/ProfileSettings';
 import NotFound from './pages/NotFound';
 import AppLayout from './layouts/AppLayout';
+import LeaveRequest from './pages/LeaveRequest';
 
 export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
         <Routes>
+          {/* Public Routes */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
-
+          
+          {/* Protected Routes (Authenticated Users) */}
           <Route element={<ProtectedRoute />}>
             <Route element={<AppLayout />}>
               <Route path="/dashboard" element={<StaffDashboard />} />
               <Route path="/history" element={<AttendanceHistory />} />
               <Route path="/profile" element={<ProfileSettings />} />
+              <Route path="/leave-request" element={<LeaveRequest />} />
 
+              {/* Admin Only Routes */}
               <Route element={<AdminRoute />}>
                 <Route path="/admin" element={<AdminDashboard />} />
               </Route>
