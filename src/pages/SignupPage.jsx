@@ -18,6 +18,13 @@ export default function SignupPage() {
     e.preventDefault();
     if (!form.name || !form.email || !form.password) { toast.error('All fields required'); return; }
     if (form.password.length < 6) { toast.error('Password must be at least 6 characters'); return; }
+   if (form.role === 'admin') {
+      const secretCode = prompt("Enter Admin Secret Code:");
+      if (secretCode !== 'NEXORA2026') {
+        toast.error("Invalid Admin Code!");
+        return;
+      }
+    } 
     setLoading(true);
     try {
       const userData = await registerUser(form);
