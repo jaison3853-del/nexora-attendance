@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { useClock } from '../hooks/useClock';
 import { getTodayAttendance, getUserAttendance, getAttendanceStats } from '../services/attendanceService';
 import { db } from '../firebase/config';
-import { collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import MarkAttendance from '../components/attendance/MarkAttendance';
 import StatCard from '../components/ui/StatCard';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -21,7 +21,7 @@ export default function StaffDashboard() {
   const { date, dateKey } = useClock();
   const [todayRecord, setTodayRecord] = useState(null);
   const [records, setRecords] = useState([]);
-  const [myLeaves, setMyLeaves] = useState([]); // ലീവ് സ്റ്റാറ്റസ് സേവ് ചെയ്യാൻ
+  const [myLeaves, setMyLeaves] = useState([]);
   const [stats, setStats] = useState({ total: 0, present: 0, absent: 0, late: 0, percentage: 0 });
   const [loading, setLoading] = useState(true);
 
@@ -35,21 +35,27 @@ export default function StaffDashboard() {
         setTodayRecord(today);
         setRecords(all);
         setStats(getAttendanceStats(all));
-      } catch (err) { console.error(err); }
+      } catch (err) { 
+        console.error("Attendance Error:", err); 
+      }
       setLoading(false);
     };
 
     loadData();
 
-    // ലോഗിൻ ചെയ്ത സ്റ്റാഫിന്റെ ലീവ് അപേക്ഷകൾ മാത്രം എടുക്കുന്നു
+    // Leave status query (Simplified to avoid Index error)
     const q = query(
       collection(db, 'leaves'), 
-      where('userId', '==', user.uid),
-      orderBy('createdAt', 'desc')
+      where('userId', '==', user.uid)
     );
 
     const unsubLeaves = onSnapshot(q, (snapshot) => {
-      setMyLeaves(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      const leaveList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      // UI-il latest aayi vannath mukalil kaanan manual sorting
+      const sortedLeaves = leaveList.sort((a, b) => b.createdAt?.seconds - a.createdAt?.seconds);
+      setMyLeaves(sortedLeaves);
+    }, (error) => {
+      console.error("Leave Firestore Error:", error);
     });
 
     return () => unsubLeaves();
@@ -57,14 +63,13 @@ export default function StaffDashboard() {
 
   const handleMarked = (record) => {
     setTodayRecord(record);
-    // Reload stats
   };
 
   if (loading) return <Loader />;
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto pb-10">
-      {/* Header & Welcome */}
+    <div className="space-y-6 max-w-5xl mx-auto pb-10 px-4">
+      {/* Header Section */}
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -81,7 +86,7 @@ export default function StaffDashboard() {
         </div>
       </motion.div>
 
-      {/* Stats Section */}
+      {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard icon={Calendar} label="Total Days" value={stats.total} color="cyan" />
         <StatCard icon={CheckCircle} label="Present" value={stats.present} color="emerald" />
@@ -90,7 +95,7 @@ export default function StaffDashboard() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Attendance Percentage */}
+        {/* Progress Bar */}
         <div className="glass rounded-2xl p-5 md:col-span-2">
           <div className="flex items-center justify-between mb-3">
             <span className="text-sm font-semibold text-text-bright">Attendance Rate</span>
@@ -101,14 +106,14 @@ export default function StaffDashboard() {
           </div>
         </div>
 
-        {/* Apply Leave Button */}
-        <Link to="/leave-request" className="glass rounded-2xl p-5 flex flex-col justify-center items-center gap-2 hover:bg-white/5 border border-violet-500/20 group">
+        {/* Quick Link */}
+        <Link to="/leave-request" className="glass rounded-2xl p-5 flex flex-col justify-center items-center gap-2 hover:bg-white/5 border border-violet-500/20 transition-all group">
           <FileText className="text-violet-400" size={24} />
           <span className="text-sm font-bold text-text-bright">Apply for Leave</span>
         </Link>
       </div>
 
-      {/* Leave Status Section (New) */}
+      {/* Leave Status Display */}
       <AnimatePresence>
         {myLeaves.length > 0 && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-2xl p-5 border border-white/5">
@@ -137,11 +142,11 @@ export default function StaffDashboard() {
         )}
       </AnimatePresence>
 
-      {/* Mark Attendance Component */}
+      {/* Attendance Component */}
       <MarkAttendance onMarked={handleMarked} alreadyMarked={!!todayRecord} />
 
-      {/* Recent Attendance History */}
-      <div className="glass rounded-2xl p-5">
+      {/* History Table */}
+      <div className="glass rounded-2xl p-5 overflow-x-auto">
         <h3 className="text-sm font-semibold text-text-bright mb-4">Recent Attendance</h3>
         <AttendanceTable records={records.slice(0, 5)} />
       </div>
