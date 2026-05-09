@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users, CheckCircle, XCircle, Clock, TrendingUp, Download,
-  Search, Filter, RefreshCw, Shield, Activity, FileText, Check, X
+  Search, RefreshCw, Shield, Activity, FileText, Check, X
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -16,7 +16,6 @@ import { format, subDays } from 'date-fns';
 import AttendanceTable from '../components/attendance/AttendanceTable';
 import StatCard from '../components/ui/StatCard';
 import Loader from '../components/ui/Loader';
-import EmptyState from '../components/ui/EmptyState';
 import toast from 'react-hot-toast';
 
 const PIE_COLORS = ['#34d399', '#fb7185', '#fbbf24'];
@@ -41,22 +40,19 @@ export default function AdminDashboard() {
   const [leaves, setLeaves] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({ search: '', status: '', date: '', month: '' });
+  const [filters, setFilters] = useState({ search: '', status: '', date: '', month: format(new Date(), 'yyyy-MM') });
   const [page, setPage] = useState(1);
   const PER_PAGE = 15;
 
   useEffect(() => {
-    // സ്റ്റാഫ് ലിസ്റ്റ് എടുക്കുന്നു
     getAllUsers().then(setUsers);
 
-    // അറ്റൻഡൻസ് സബ്സ്ക്രിപ്ഷൻ
     const unsubAttendance = subscribeToAttendance((data) => {
       setRecords(data);
       setFiltered(data);
       setLoading(false);
     });
 
-    // ലീവ് അപേക്ഷകൾ എടുക്കുന്നു
     const qLeaves = query(collection(db, 'leaves'), orderBy('createdAt', 'desc'));
     const unsubLeaves = onSnapshot(qLeaves, (snapshot) => {
       setLeaves(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -92,7 +88,44 @@ export default function AdminDashboard() {
     }
   };
 
-  // Chart data setup
+  // Monthly Summary Export Logic
+  const exportMonthlySummary = () => {
+    if (!filtered.length) {
+      toast.error('No data found for the selected month');
+      return;
+    }
+
+    const summaryMap = {};
+    users.forEach(u => {
+      summaryMap[u.uid] = { Name: u.name || 'Unknown', Present: 0, Late: 0, Absent: 0, Total: 0 };
+    });
+
+    filtered.forEach(r => {
+      if (summaryMap[r.uid]) {
+        summaryMap[r.uid].Total++;
+        if (r.status === 'present') summaryMap[r.uid].Present++;
+        else if (r.status === 'late') summaryMap[r.uid].Late++;
+        else if (r.status === 'absent') summaryMap[r.uid].Absent++;
+      }
+    });
+
+    const headers = ['Staff Name', 'Present Days', 'Late Entries', 'Absent Days', 'Total Records', 'Attendance %'];
+    const rows = Object.values(summaryMap).map(s => {
+      const percentage = s.Total > 0 ? ((s.Present + s.Late) / s.Total * 100).toFixed(1) : 0;
+      return [s.Name, s.Present, s.Late, s.Absent, s.Total, percentage + '%'];
+    });
+
+    const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.body.appendChild(document.createElement("a"));
+    link.href = url;
+    link.download = `Nexora_Report_${filters.month}.csv`;
+    link.click();
+    document.body.removeChild(link);
+    toast.success('Monthly Report Exported!');
+  };
+
   const last7 = Array.from({ length: 7 }, (_, i) => {
     const d = format(subDays(new Date(), 6 - i), 'yyyy-MM-dd');
     const label = format(subDays(new Date(), 6 - i), 'EEE');
@@ -105,11 +138,7 @@ export default function AdminDashboard() {
     };
   });
 
-  const pieData = [
-    { name: 'Present', value: stats.present },
-    { name: 'Absent', value: stats.absent },
-    { name: 'Late', value: stats.late },
-  ].filter(d => d.value > 0);
+  const pieData = [{ name: 'Present', value: stats.present }, { name: 'Absent', value: stats.absent }, { name: 'Late', value: stats.late }].filter(d => d.value > 0);
 
   if (loading) return <Loader />;
 
@@ -117,7 +146,7 @@ export default function AdminDashboard() {
   const pendingLeaves = leaves.filter(l => l.status === 'pending');
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-6 max-w-7xl mx-auto pb-10 px-4">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -129,56 +158,38 @@ export default function AdminDashboard() {
           <p className="text-sm text-text-muted mt-0.5">{users.length} staff members • {pendingLeaves.length} pending leaves</p>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-400/10 border border-emerald-400/20">
-            <Activity size={12} className="text-emerald-400 animate-pulse" />
-            <span className="text-xs text-emerald-400 font-mono">Live</span>
-          </div>
+          <button onClick={exportMonthlySummary} className="btn-primary flex items-center gap-2 text-sm bg-violet-600 hover:bg-violet-700">
+            <Download size={14} />
+            Monthly Summary
+          </button>
         </div>
       </div>
 
-      {/* Stats */}
+      {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard icon={Users} label="Total Records" value={stats.total} color="violet" delay={0} />
-        <StatCard icon={CheckCircle} label="Present" value={stats.present} color="emerald" delay={0.05} />
-        <StatCard icon={Clock} label="Late" value={stats.late} color="amber" delay={0.1} />
-        <StatCard icon={XCircle} label="Absent" value={stats.absent} color="rose" delay={0.15} />
+        <StatCard icon={Users} label="Total Records" value={stats.total} color="violet" />
+        <StatCard icon={CheckCircle} label="Present" value={stats.present} color="emerald" />
+        <StatCard icon={Clock} label="Late" value={stats.late} color="amber" />
+        <StatCard icon={XCircle} label="Absent" value={stats.absent} color="rose" />
       </div>
 
-      {/* Leave Requests Section (New) */}
+      {/* Leave Requests */}
       <AnimatePresence>
         {pendingLeaves.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="glass rounded-2xl p-5 border border-amber-500/20"
-          >
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="glass rounded-2xl p-5 border border-amber-500/20">
             <h3 className="text-sm font-semibold text-text-bright mb-4 flex items-center gap-2">
-              <FileText size={14} className="text-amber-400" />
-              Pending Leave Requests
+              <FileText size={14} className="text-amber-400" /> Pending Leaves
             </h3>
             <div className="grid gap-3">
               {pendingLeaves.map((leave) => (
-                <div key={leave.id} className="bg-white/5 rounded-xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                  <div>
-                    <span className="text-xs font-mono text-amber-400 uppercase tracking-tighter">{leave.type}</span>
+                <div key={leave.id} className="bg-white/5 rounded-xl p-4 flex justify-between items-center border border-white/5">
+                  <div className="text-left">
                     <p className="text-sm font-bold text-text-bright">{leave.userName}</p>
-                    <p className="text-[10px] text-text-muted">{leave.startDate} to {leave.endDate}</p>
-                    <p className="text-xs text-text-base mt-1 italic">"{leave.reason}"</p>
+                    <p className="text-[10px] text-text-muted">{leave.startDate} to {leave.endDate} • {leave.type}</p>
                   </div>
                   <div className="flex gap-2">
-                    <button 
-                      onClick={() => handleLeaveStatus(leave.id, 'approved')}
-                      className="p-2 bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 rounded-lg transition"
-                    >
-                      <Check size={18} />
-                    </button>
-                    <button 
-                      onClick={() => handleLeaveStatus(leave.id, 'rejected')}
-                      className="p-2 bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 rounded-lg transition"
-                    >
-                      <X size={18} />
-                    </button>
+                    <button onClick={() => handleLeaveStatus(leave.id, 'approved')} className="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg hover:bg-emerald-500/30"><Check size={16} /></button>
+                    <button onClick={() => handleLeaveStatus(leave.id, 'rejected')} className="p-2 bg-rose-500/20 text-rose-400 rounded-lg hover:bg-rose-500/30"><X size={16} /></button>
                   </div>
                 </div>
               ))}
@@ -187,15 +198,13 @@ export default function AdminDashboard() {
         )}
       </AnimatePresence>
 
-      {/* Charts Section */}
+      {/* Charts */}
       <div className="grid lg:grid-cols-3 gap-4">
-        <motion.div className="glass rounded-2xl p-5 lg:col-span-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <h3 className="text-sm font-semibold text-text-bright mb-4 flex items-center gap-2">
-            <TrendingUp size={14} className="text-cyan-400" /> Last 7 Days Attendance
-          </h3>
+        <div className="glass rounded-2xl p-5 lg:col-span-2">
+          <h3 className="text-sm font-semibold text-text-bright mb-4 flex items-center gap-2"><TrendingUp size={14} className="text-cyan-400" /> Weekly Trends</h3>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={last7}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(26,37,53,0.6)" />
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
               <XAxis dataKey="day" tick={{ fill: '#6b8aad', fontSize: 11 }} />
               <YAxis tick={{ fill: '#6b8aad', fontSize: 11 }} />
               <Tooltip content={<CustomTooltip />} />
@@ -204,10 +213,9 @@ export default function AdminDashboard() {
               <Bar dataKey="Absent" fill="#fb7185" radius={[4,4,0,0]} />
             </BarChart>
           </ResponsiveContainer>
-        </motion.div>
-
-        <motion.div className="glass rounded-2xl p-5" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <h3 className="text-sm font-semibold text-text-bright mb-4">Status Distribution</h3>
+        </div>
+        <div className="glass rounded-2xl p-5">
+          <h3 className="text-sm font-semibold text-text-bright mb-4 text-left">Status Ratio</h3>
           <ResponsiveContainer width="100%" height={160}>
             <PieChart>
               <Pie data={pieData} cx="50%" cy="50%" innerRadius={40} outerRadius={70} dataKey="value">
@@ -216,46 +224,30 @@ export default function AdminDashboard() {
               <Tooltip content={<CustomTooltip />} />
             </PieChart>
           </ResponsiveContainer>
-          <div className="mt-3 space-y-1">
-            {pieData.map((d, i) => (
-              <div key={d.name} className="flex justify-between text-[10px]">
-                <span className="text-text-muted">{d.name}</span>
-                <span className="text-text-bright font-bold">{d.value}</span>
-              </div>
-            ))}
-          </div>
-        </motion.div>
+        </div>
       </div>
 
       {/* Filters & Table */}
-      <motion.div className="glass rounded-2xl p-5" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-        <div className="flex flex-col sm:flex-row gap-3 mb-5">
-          <div className="relative flex-1">
+      <div className="glass rounded-2xl p-5">
+        <div className="flex flex-wrap gap-3 mb-5">
+          <div className="relative flex-1 min-w-[200px]">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-            <input
-              type="text"
-              placeholder="Search staff name..."
-              value={filters.search}
-              onChange={e => setFilters({ ...filters, search: e.target.value })}
-              className="input-field pl-9"
-            />
+            <input type="text" placeholder="Staff Name..." value={filters.search} onChange={e => setFilters({ ...filters, search: e.target.value })} className="input-field pl-9 w-full" />
           </div>
-          <select value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })} className="input-field sm:w-36">
+          <input type="month" value={filters.month} onChange={e => setFilters({ ...filters, month: e.target.value })} className="input-field w-full sm:w-48" />
+          <select value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })} className="input-field w-full sm:w-36">
             <option value="">All Status</option>
             <option value="present">Present</option>
             <option value="late">Late</option>
             <option value="absent">Absent</option>
           </select>
-          <input type="date" value={filters.date} onChange={e => setFilters({ ...filters, date: e.target.value })} className="input-field sm:w-40" />
-          <button onClick={() => setFilters({ search: '', status: '', date: '', month: '' })} className="btn-ghost flex items-center gap-1.5 text-sm">
-            <RefreshCw size={12} /> Reset
-          </button>
+          <button onClick={() => setFilters({ search: '', status: '', date: '', month: format(new Date(), 'yyyy-MM') })} className="btn-ghost flex items-center gap-1.5 text-sm"><RefreshCw size={12} /> Reset</button>
         </div>
         <AttendanceTable records={paginated} showUser />
         {paginated.length < filtered.length && (
           <button onClick={() => setPage(p => p + 1)} className="btn-ghost text-sm w-full mt-4">Load More</button>
         )}
-      </motion.div>
+      </div>
     </div>
   );
 }
