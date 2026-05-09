@@ -1,16 +1,18 @@
 // src/pages/AdminDashboard.jsx
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users, CheckCircle, XCircle, Clock, TrendingUp, Download,
-  Search, Filter, RefreshCw, Shield, Activity
+  Search, Filter, RefreshCw, Shield, Activity, FileText, Check, X
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, LineChart, Line, CartesianGrid, Legend
+  PieChart, Pie, Cell, CartesianGrid
 } from 'recharts';
-import { getAllAttendance, getAllUsers, subscribeToAttendance, getAttendanceStats } from '../services/attendanceService';
-import { format, subDays, startOfMonth, eachDayOfInterval } from 'date-fns';
+import { subscribeToAttendance, getAllUsers, getAttendanceStats } from '../services/attendanceService';
+import { db } from '../firebase/config';
+import { collection, query, onSnapshot, orderBy, updateDoc, doc } from 'firebase/firestore';
+import { format, subDays } from 'date-fns';
 import AttendanceTable from '../components/attendance/AttendanceTable';
 import StatCard from '../components/ui/StatCard';
 import Loader from '../components/ui/Loader';
@@ -36,6 +38,7 @@ const CustomTooltip = ({ active, payload, label }) => {
 export default function AdminDashboard() {
   const [records, setRecords] = useState([]);
   const [users, setUsers] = useState([]);
+  const [leaves, setLeaves] = useState([]);
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ search: '', status: '', date: '', month: '' });
@@ -43,17 +46,26 @@ export default function AdminDashboard() {
   const PER_PAGE = 15;
 
   useEffect(() => {
-    (async () => {
-      const [allUsers] = await Promise.all([getAllUsers()]);
-      setUsers(allUsers);
-    })();
+    // സ്റ്റാഫ് ലിസ്റ്റ് എടുക്കുന്നു
+    getAllUsers().then(setUsers);
 
-    const unsub = subscribeToAttendance((data) => {
+    // അറ്റൻഡൻസ് സബ്സ്ക്രിപ്ഷൻ
+    const unsubAttendance = subscribeToAttendance((data) => {
       setRecords(data);
       setFiltered(data);
       setLoading(false);
     });
-    return unsub;
+
+    // ലീവ് അപേക്ഷകൾ എടുക്കുന്നു
+    const qLeaves = query(collection(db, 'leaves'), orderBy('createdAt', 'desc'));
+    const unsubLeaves = onSnapshot(qLeaves, (snapshot) => {
+      setLeaves(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
+    return () => {
+      unsubAttendance();
+      unsubLeaves();
+    };
   }, []);
 
   useEffect(() => {
@@ -71,7 +83,16 @@ export default function AdminDashboard() {
 
   const stats = getAttendanceStats(records);
 
-  // Chart data
+  const handleLeaveStatus = async (id, newStatus) => {
+    try {
+      await updateDoc(doc(db, 'leaves', id), { status: newStatus });
+      toast.success(`Leave ${newStatus}!`);
+    } catch (error) {
+      toast.error('Failed to update status');
+    }
+  };
+
+  // Chart data setup
   const last7 = Array.from({ length: 7 }, (_, i) => {
     const d = format(subDays(new Date(), 6 - i), 'yyyy-MM-dd');
     const label = format(subDays(new Date(), 6 - i), 'EEE');
@@ -90,25 +111,10 @@ export default function AdminDashboard() {
     { name: 'Late', value: stats.late },
   ].filter(d => d.value > 0);
 
-  const exportCSV = () => {
-    if (!filtered.length) { toast.error('No data to export'); return; }
-    const rows = [
-      ['Name', 'Date', 'Status', 'Time', 'Location', 'Latitude', 'Longitude'],
-      ...filtered.map(r => [r.name, r.date, r.status, r.time, r.locationName, r.latitude, r.longitude])
-    ];
-    const csv = rows.map(r => r.join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `nexora-attendance-${format(new Date(), 'yyyy-MM-dd')}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast.success('CSV exported!');
-  };
-
   if (loading) return <Loader />;
 
   const paginated = filtered.slice(0, page * PER_PAGE);
+  const pendingLeaves = leaves.filter(l => l.status === 'pending');
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
@@ -119,18 +125,14 @@ export default function AdminDashboard() {
             <Shield size={14} className="text-violet-400" />
             <span className="text-xs text-violet-400 font-mono uppercase tracking-widest">Admin Panel</span>
           </div>
-          <h1 className="text-2xl font-display font-bold text-text-bright">Analytics Dashboard</h1>
-          <p className="text-sm text-text-muted mt-0.5">Real-time attendance insights — {users.length} staff members</p>
+          <h1 className="text-2xl font-display font-bold text-text-bright">Analytics & Management</h1>
+          <p className="text-sm text-text-muted mt-0.5">{users.length} staff members • {pendingLeaves.length} pending leaves</p>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-400/10 border border-emerald-400/20">
             <Activity size={12} className="text-emerald-400 animate-pulse" />
             <span className="text-xs text-emerald-400 font-mono">Live</span>
           </div>
-          <button onClick={exportCSV} className="btn-ghost flex items-center gap-2 text-sm">
-            <Download size={14} />
-            Export CSV
-          </button>
         </div>
       </div>
 
@@ -142,24 +144,60 @@ export default function AdminDashboard() {
         <StatCard icon={XCircle} label="Absent" value={stats.absent} color="rose" delay={0.15} />
       </div>
 
-      {/* Charts */}
+      {/* Leave Requests Section (New) */}
+      <AnimatePresence>
+        {pendingLeaves.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="glass rounded-2xl p-5 border border-amber-500/20"
+          >
+            <h3 className="text-sm font-semibold text-text-bright mb-4 flex items-center gap-2">
+              <FileText size={14} className="text-amber-400" />
+              Pending Leave Requests
+            </h3>
+            <div className="grid gap-3">
+              {pendingLeaves.map((leave) => (
+                <div key={leave.id} className="bg-white/5 rounded-xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <div>
+                    <span className="text-xs font-mono text-amber-400 uppercase tracking-tighter">{leave.type}</span>
+                    <p className="text-sm font-bold text-text-bright">{leave.userName}</p>
+                    <p className="text-[10px] text-text-muted">{leave.startDate} to {leave.endDate}</p>
+                    <p className="text-xs text-text-base mt-1 italic">"{leave.reason}"</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => handleLeaveStatus(leave.id, 'approved')}
+                      className="p-2 bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 rounded-lg transition"
+                    >
+                      <Check size={18} />
+                    </button>
+                    <button 
+                      onClick={() => handleLeaveStatus(leave.id, 'rejected')}
+                      className="p-2 bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 rounded-lg transition"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Charts Section */}
       <div className="grid lg:grid-cols-3 gap-4">
-        {/* Bar chart */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="glass rounded-2xl p-5 lg:col-span-2"
-        >
+        <motion.div className="glass rounded-2xl p-5 lg:col-span-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           <h3 className="text-sm font-semibold text-text-bright mb-4 flex items-center gap-2">
-            <TrendingUp size={14} className="text-cyan-400" />
-            Last 7 Days Attendance
+            <TrendingUp size={14} className="text-cyan-400" /> Last 7 Days Attendance
           </h3>
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={last7} barGap={2}>
+            <BarChart data={last7}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(26,37,53,0.6)" />
-              <XAxis dataKey="day" tick={{ fill: '#6b8aad', fontSize: 11, fontFamily: 'JetBrains Mono' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#6b8aad', fontSize: 11, fontFamily: 'JetBrains Mono' }} axisLine={false} tickLine={false} />
+              <XAxis dataKey="day" tick={{ fill: '#6b8aad', fontSize: 11 }} />
+              <YAxis tick={{ fill: '#6b8aad', fontSize: 11 }} />
               <Tooltip content={<CustomTooltip />} />
               <Bar dataKey="Present" fill="#34d399" radius={[4,4,0,0]} />
               <Bar dataKey="Late" fill="#fbbf24" radius={[4,4,0,0]} />
@@ -168,55 +206,35 @@ export default function AdminDashboard() {
           </ResponsiveContainer>
         </motion.div>
 
-        {/* Pie chart */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.25 }}
-          className="glass rounded-2xl p-5"
-        >
+        <motion.div className="glass rounded-2xl p-5" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
           <h3 className="text-sm font-semibold text-text-bright mb-4">Status Distribution</h3>
-          {pieData.length > 0 ? (
-            <>
-              <ResponsiveContainer width="100%" height={160}>
-                <PieChart>
-                  <Pie data={pieData} cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={3} dataKey="value">
-                    {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i]} />)}
-                  </Pie>
-                  <Tooltip content={<CustomTooltip />} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="space-y-2 mt-3">
-                {pieData.map((d, i) => (
-                  <div key={d.name} className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full" style={{ background: PIE_COLORS[i] }} />
-                      <span className="text-text-muted">{d.name}</span>
-                    </div>
-                    <span className="font-mono font-semibold text-text-base">{d.value}</span>
-                  </div>
-                ))}
+          <ResponsiveContainer width="100%" height={160}>
+            <PieChart>
+              <Pie data={pieData} cx="50%" cy="50%" innerRadius={40} outerRadius={70} dataKey="value">
+                {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i]} />)}
+              </Pie>
+              <Tooltip content={<CustomTooltip />} />
+            </PieChart>
+          </ResponsiveContainer>
+          <div className="mt-3 space-y-1">
+            {pieData.map((d, i) => (
+              <div key={d.name} className="flex justify-between text-[10px]">
+                <span className="text-text-muted">{d.name}</span>
+                <span className="text-text-bright font-bold">{d.value}</span>
               </div>
-            </>
-          ) : (
-            <EmptyState title="No data yet" subtitle="Attendance records will appear here" />
-          )}
+            ))}
+          </div>
         </motion.div>
       </div>
 
-      {/* Filters + Table */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3 }}
-        className="glass rounded-2xl p-5"
-      >
+      {/* Filters & Table */}
+      <motion.div className="glass rounded-2xl p-5" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
         <div className="flex flex-col sm:flex-row gap-3 mb-5">
           <div className="relative flex-1">
             <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
             <input
               type="text"
-              placeholder="Search by name..."
+              placeholder="Search staff name..."
               value={filters.search}
               onChange={e => setFilters({ ...filters, search: e.target.value })}
               className="input-field pl-9"
@@ -230,17 +248,12 @@ export default function AdminDashboard() {
           </select>
           <input type="date" value={filters.date} onChange={e => setFilters({ ...filters, date: e.target.value })} className="input-field sm:w-40" />
           <button onClick={() => setFilters({ search: '', status: '', date: '', month: '' })} className="btn-ghost flex items-center gap-1.5 text-sm">
-            <RefreshCw size={12} />
-            Reset
+            <RefreshCw size={12} /> Reset
           </button>
         </div>
-
-        <p className="text-xs text-text-muted mb-3 font-mono">{filtered.length} records</p>
         <AttendanceTable records={paginated} showUser />
         {paginated.length < filtered.length && (
-          <div className="text-center mt-4">
-            <button onClick={() => setPage(p => p + 1)} className="btn-ghost text-sm">Load More</button>
-          </div>
+          <button onClick={() => setPage(p => p + 1)} className="btn-ghost text-sm w-full mt-4">Load More</button>
         )}
       </motion.div>
     </div>
