@@ -52,6 +52,7 @@ export default function MarkAttendance({ onMarked, alreadyMarked }) {
         latitude: loc?.latitude || null,
         longitude: loc?.longitude || null,
         locationName: locName || 'Location unavailable',
+        time: time, // <--- ഇവിടെയാണ് സമയം കൂടി ഡാറ്റാബേസിലേക്ക് അയക്കാൻ ചേർത്തത്
       });
       toast.success(`Attendance marked as ${selected}!`);
       onMarked?.(record);

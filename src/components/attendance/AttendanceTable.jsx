@@ -9,14 +9,15 @@ export default function AttendanceTable({ records = [], showUser = false }) {
 
   return (
     <div className="overflow-x-auto rounded-xl">
-      <table className="w-full text-sm">
+      <table className="w-full text-sm min-w-[700px]">
         <thead>
           <tr className="border-b border-border/50">
             {showUser && <th className="text-left py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">Employee</th>}
             <th className="text-left py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">Date</th>
             <th className="text-left py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">Status</th>
-            <th className="text-left py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider hidden md:table-cell">Time</th>
-            <th className="text-left py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider hidden lg:table-cell">Location</th>
+            {/* ഇവിടെ hidden മാറ്റി */}
+            <th className="text-left py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">Time</th>
+            <th className="text-left py-3 px-4 text-xs font-semibold text-text-muted uppercase tracking-wider">Location</th>
           </tr>
         </thead>
         <tbody>
@@ -40,16 +41,17 @@ export default function AttendanceTable({ records = [], showUser = false }) {
               )}
               <td className="py-3 px-4 font-mono text-text-dim text-xs">{rec.date}</td>
               <td className="py-3 px-4"><StatusBadge status={rec.status} /></td>
-              <td className="py-3 px-4 hidden md:table-cell">
-                <span className="flex items-center gap-1.5 text-xs text-text-muted font-mono">
+              {/* ഇവിടെ hidden മാറ്റി */}
+              <td className="py-3 px-4">
+                <span className="flex items-center gap-1.5 text-xs text-text-muted font-mono whitespace-nowrap">
                   <Clock size={11} />
-                  {rec.time}
+                  {rec.time || '--:--'}
                 </span>
               </td>
-              <td className="py-3 px-4 hidden lg:table-cell">
-                <span className="flex items-center gap-1.5 text-xs text-text-muted truncate max-w-[180px]">
+              <td className="py-3 px-4">
+                <span className="flex items-center gap-1.5 text-xs text-text-muted max-w-[200px] truncate" title={rec.locationName}>
                   <MapPin size={11} className="text-cyan-500/60 shrink-0" />
-                  {rec.locationName || '—'}
+                  <span className="truncate">{rec.locationName || 'Location unavailable'}</span>
                 </span>
               </td>
             </motion.tr>
