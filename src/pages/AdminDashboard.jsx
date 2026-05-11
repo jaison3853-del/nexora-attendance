@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users, CheckCircle, XCircle, Clock, TrendingUp, Download,
-  Search, RefreshCw, Shield, Activity, FileText, Check, X, Calendar
+  Search, RefreshCw, Shield, Activity, FileText, Check, X, Calendar, MapPin
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -41,26 +41,27 @@ export default function AdminDashboard() {
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
   
+  // Default ആയി ഇന്നത്തെ ഡേറ്റ് കാണിക്കും
   const [filters, setFilters] = useState({ 
     search: '', 
     status: '', 
     date: format(new Date(), 'yyyy-MM-dd'),
-    month: format(new Date(), 'yyyy-MM')
+    month: ''
   });
 
   const [page, setPage] = useState(1);
-  const PER_PAGE = 15;
+  const PER_PAGE = 20;
 
   useEffect(() => {
     getAllUsers().then(setUsers);
 
-    // അറ്റൻഡൻസ് സബ്സ്ക്രിപ്ഷൻ
+    // അറ്റൻഡൻസ് ലൈവ് അപ്ഡേറ്റ്സ്
     const unsubAttendance = subscribeToAttendance((data) => {
       setRecords(data);
       setLoading(false);
     });
 
-    // ലീവ് അപേക്ഷകൾ സബ്സ്ക്രിപ്ഷൻ
+    // ലീവ് റിക്വസ്റ്റുകൾ
     const qLeaves = query(collection(db, 'leaves'), orderBy('createdAt', 'desc'));
     const unsubLeaves = onSnapshot(qLeaves, (snapshot) => {
       setLeaves(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
@@ -78,9 +79,10 @@ export default function AdminDashboard() {
       const q = filters.search.toLowerCase();
       f = f.filter(r => r.name?.toLowerCase().includes(q) || r.uid?.includes(q));
     }
+    if (filters.status) f = f.filter(r => r.status === filters.status);
     
-    // ഡെയ്‌ലി വ്യൂ അല്ലെങ്കിൽ മന്തിലി വ്യൂ ഫിൽട്ടർ
-    if (filters.date && !filters.month) {
+    // Daily view അല്ലെങ്കിൽ Monthly view ലോജിക്
+    if (filters.date) {
       f = f.filter(r => r.date === filters.date);
     } else if (filters.month) {
       f = f.filter(r => r.date?.startsWith(filters.month));
@@ -90,9 +92,11 @@ export default function AdminDashboard() {
     setPage(1);
   }, [filters, records]);
 
-  // എക്സൽ റിപ്പോർട്ട് ഡൗൺലോഡ് ഫങ്ക്ഷൻ
+  // Monthly Excel Summary Export
   const exportMonthlySummary = () => {
-    const reportData = records.filter(r => r.date?.startsWith(filters.month));
+    const currentMonth = filters.month || format(new Date(), 'yyyy-MM');
+    const reportData = records.filter(r => r.date?.startsWith(currentMonth));
+    
     if (!reportData.length) {
       toast.error('ഈ മാസത്തെ ഡാറ്റ ലഭ്യമല്ല');
       return;
@@ -123,13 +127,12 @@ export default function AdminDashboard() {
     const url = URL.createObjectURL(blob);
     const link = document.body.appendChild(document.createElement("a"));
     link.href = url;
-    link.download = `Nexora_Report_${filters.month}.csv`;
+    link.download = `Nexora_Monthly_Report_${currentMonth}.csv`;
     link.click();
     document.body.removeChild(link);
-    toast.success('റിപ്പോർട്ട് ഡൗൺലോഡ് ആയി!');
+    toast.success('മാസത്തെ റിപ്പോർട്ട് ഡൗൺലോഡ് ആയി!');
   };
 
-  // ലീവ് അപ്രൂവ്/റിജക്ട് ഫങ്ക്ഷൻ
   const handleLeaveStatus = async (id, newStatus) => {
     try {
       await updateDoc(doc(db, 'leaves', id), { status: newStatus });
@@ -155,51 +158,51 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-10 px-4">
-      {/* Header & Export Button */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <Shield size={14} className="text-violet-400" />
-            <span className="text-xs text-violet-400 font-mono uppercase tracking-widest">Admin Panel</span>
+            <span className="text-xs text-violet-400 font-mono uppercase tracking-widest">Nexora SM Admin</span>
           </div>
-          <h1 className="text-2xl font-display font-bold text-text-bright">Nexora Management</h1>
+          <h1 className="text-2xl font-display font-bold text-text-bright">Daily Analytics & Management</h1>
           <p className="text-xs text-text-muted mt-1 italic">
-             Showing: {filters.month ? format(new Date(filters.month), 'MMMM yyyy') : filters.date}
+             {filters.date ? `Today's Updates: ${filters.date}` : `Monthly Records: ${filters.month}`}
           </p>
         </div>
-        <button onClick={exportMonthlySummary} className="btn-primary flex items-center gap-2 text-sm bg-violet-600 hover:bg-violet-700 py-2.5 px-4 rounded-xl">
+        <button onClick={exportMonthlySummary} className="btn-primary flex items-center gap-2 text-sm bg-violet-600 hover:bg-violet-700 py-2.5 px-5 rounded-xl transition-all">
           <Download size={14} />
-          Monthly Summary (CSV)
+          Monthly Report (CSV)
         </button>
       </div>
 
-      {/* Stats Section */}
+      {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard icon={CheckCircle} label="Present" value={filtered.filter(r=>r.status==='present').length} color="emerald" />
-        <StatCard icon={Clock} label="Late" value={filtered.filter(r=>r.status==='late').length} color="amber" />
-        <StatCard icon={XCircle} label="Absent" value={filtered.filter(r=>r.status==='absent').length} color="rose" />
+        <StatCard icon={CheckCircle} label="Present Today" value={filtered.filter(r=>r.status==='present').length} color="emerald" />
+        <StatCard icon={Clock} label="Late Today" value={filtered.filter(r=>r.status==='late').length} color="amber" />
+        <StatCard icon={XCircle} label="Absent Today" value={filtered.filter(r=>r.status==='absent').length} color="rose" />
         <StatCard icon={Users} label="Total Staff" value={users.length} color="violet" />
       </div>
 
-      {/* PENDING LEAVE REQUESTS - ഇതാ വന്നിട്ടുണ്ട്! */}
+      {/* Leave Requests Section */}
       <AnimatePresence>
         {pendingLeaves.length > 0 && (
-          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-2xl p-5 border border-amber-500/20">
+          <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-2xl p-5 border border-amber-500/20 shadow-xl">
             <h3 className="text-sm font-semibold text-text-bright mb-4 flex items-center gap-2">
-              <FileText size={14} className="text-amber-400" />
-              Pending Leave Applications
+              <FileText size={16} className="text-amber-400" />
+              Pending Leave Requests
             </h3>
             <div className="grid gap-3">
               {pendingLeaves.map((leave) => (
                 <div key={leave.id} className="bg-white/5 rounded-xl p-4 flex justify-between items-center border border-white/5">
                   <div className="text-left">
-                    <p className="text-sm font-bold text-text-bright">{leave.userName || 'Nexora Staff'}</p>
+                    <p className="text-sm font-bold text-text-bright">{leave.userName || 'Staff Member'}</p>
                     <p className="text-[10px] text-text-muted">{leave.startDate} to {leave.endDate} • {leave.type}</p>
-                    <p className="text-xs text-text-base mt-1 italic">"{leave.reason}"</p>
+                    <p className="text-xs text-text-base mt-1 italic opacity-80">"{leave.reason}"</p>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => handleLeaveStatus(leave.id, 'approved')} className="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg hover:bg-emerald-500/30 transition-colors" title="Approve"><Check size={18} /></button>
-                    <button onClick={() => handleLeaveStatus(leave.id, 'rejected')} className="p-2 bg-rose-500/20 text-rose-400 rounded-lg hover:bg-rose-500/30 transition-colors" title="Reject"><X size={18} /></button>
+                    <button onClick={() => handleLeaveStatus(leave.id, 'approved')} className="p-2.5 bg-emerald-500/20 text-emerald-400 rounded-lg hover:bg-emerald-500/30 transition-all shadow-lg"><Check size={18} /></button>
+                    <button onClick={() => handleLeaveStatus(leave.id, 'rejected')} className="p-2.5 bg-rose-500/20 text-rose-400 rounded-lg hover:bg-rose-500/30 transition-all shadow-lg"><X size={18} /></button>
                   </div>
                 </div>
               ))}
@@ -208,44 +211,15 @@ export default function AdminDashboard() {
         )}
       </AnimatePresence>
 
-      {/* Charts */}
-      <div className="grid lg:grid-cols-3 gap-4">
-        <div className="glass rounded-2xl p-5 lg:col-span-2">
-          <h3 className="text-sm font-semibold text-text-bright mb-4 flex items-center gap-2"><TrendingUp size={14} className="text-cyan-400" /> Last 7 Days</h3>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={last7}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-              <XAxis dataKey="day" tick={{ fill: '#6b8aad', fontSize: 11 }} />
-              <YAxis tick={{ fill: '#6b8aad', fontSize: 11 }} />
-              <Tooltip content={<CustomTooltip />} />
-              <Bar dataKey="Present" fill="#34d399" radius={[4,4,0,0]} />
-              <Bar dataKey="Late" fill="#fbbf24" radius={[4,4,0,0]} />
-              <Bar dataKey="Absent" fill="#fb7185" radius={[4,4,0,0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="glass rounded-2xl p-5">
-          <h3 className="text-sm font-semibold text-text-bright mb-4">Overall Distribution</h3>
-          <ResponsiveContainer width="100%" height={160}>
-            <PieChart>
-              <Pie data={pieData} cx="50%" cy="50%" innerRadius={40} outerRadius={70} dataKey="value">
-                {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i]} />)}
-              </Pie>
-              <Tooltip content={<CustomTooltip />} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* Filter & Attendance Table */}
+      {/* Main Filter Section */}
       <div className="glass rounded-2xl p-5">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 border-b border-white/5 pb-6">
           <div className="flex flex-col gap-1.5">
-            <label className="text-[10px] uppercase font-mono text-muted ml-1 italic">Daily Filter</label>
+            <label className="text-[10px] uppercase font-mono text-muted ml-1 italic">Filter by Day</label>
             <input type="date" value={filters.date} onChange={e => setFilters({ ...filters, date: e.target.value, month: '' })} className="input-field w-full" />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-[10px] uppercase font-mono text-muted ml-1 italic">Monthly Filter</label>
+            <label className="text-[10px] uppercase font-mono text-muted ml-1 italic">Filter by Month</label>
             <input type="month" value={filters.month} onChange={e => setFilters({ ...filters, month: e.target.value, date: '' })} className="input-field w-full" />
           </div>
           <div className="flex flex-col gap-1.5">
@@ -256,8 +230,8 @@ export default function AdminDashboard() {
             </div>
           </div>
           <div className="flex items-end">
-            <button onClick={() => setFilters({ search: '', status: '', date: format(new Date(), 'yyyy-MM-dd'), month: '' })} className="btn-ghost flex items-center justify-center gap-1.5 text-xs h-[42px] w-full border border-white/5 rounded-xl">
-              <RefreshCw size={12} /> Today's Updates
+            <button onClick={() => setFilters({ search: '', status: '', date: format(new Date(), 'yyyy-MM-dd'), month: '' })} className="btn-ghost flex items-center justify-center gap-1.5 text-xs h-[42px] w-full border border-white/5 rounded-xl hover:bg-white/5">
+              <RefreshCw size={12} /> Reset to Today
             </button>
           </div>
         </div>
@@ -265,11 +239,11 @@ export default function AdminDashboard() {
         <AttendanceTable records={paginated} showUser />
         
         {filtered.length === 0 && (
-          <div className="py-20 text-center text-text-muted italic">No records found.</div>
+          <div className="py-20 text-center text-text-muted italic">No records found for this selection.</div>
         )}
 
         {paginated.length < filtered.length && (
-          <button onClick={() => setPage(p => p + 1)} className="btn-ghost text-sm w-full mt-4">Load More</button>
+          <button onClick={() => setPage(p => p + 1)} className="btn-ghost text-sm w-full mt-4 py-3 border-t border-white/5">Load More</button>
         )}
       </div>
     </div>
