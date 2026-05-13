@@ -142,8 +142,8 @@ export default function StaffDashboard() {
         )}
       </AnimatePresence>
 
-      {/* Attendance Component */}
-      <MarkAttendance onMarked={handleMarked} alreadyMarked={!!todayRecord} />
+      {/* Attendance Component - ഇവിടെയാണ് Punch Out ഫീച്ചറിനു വേണ്ടി മാറ്റം വരുത്തിയത് */}
+      <MarkAttendance onMarked={handleMarked} todayRecord={todayRecord} />
 
       {/* History Table */}
       <div className="glass rounded-2xl p-5 overflow-x-auto">
