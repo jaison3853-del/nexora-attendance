@@ -11,13 +11,13 @@ import {
 import { subscribeToAttendance, getAllUsers } from '../services/attendanceService';
 import { db } from '../firebase/config';
 import { collection, query, onSnapshot, orderBy, updateDoc, doc } from 'firebase/firestore';
-import { format, subDays, getDaysInMonth, isAfter, startOfDay, isWithinInterval, endOfDay } from 'date-fns';
+import { format, subDays, getDaysInMonth, isAfter, startOfDay, isWithinInterval, endOfDay, parseISO } from 'date-fns';
 import AttendanceTable from '../components/attendance/AttendanceTable';
 import Loader from '../components/ui/Loader';
 import toast from 'react-hot-toast';
 import emailjs from '@emailjs/browser';
 
-const PIE_COLORS = ['#10b981', '#f59e0b', '#ef4444']; 
+const PIE_COLORS = ['#10b981', '#f59e0b', '#ef4444', '#f59e0b']; 
 
 export default function AdminDashboard() {
   const [records, setRecords] = useState([]);
@@ -41,7 +41,47 @@ export default function AdminDashboard() {
     return () => { unsubAttendance(); unsubLeaves(); };
   }, []);
 
-  // 1. സ്മാർട്ട് കലണ്ടർ ലോജിക് (LEAVE കൂടി ഉൾപ്പെടുത്തിയത്)
+  // മെയിൻ ടേബിളിലേക്ക് അറ്റൻഡൻസും ലീവും കൂടി യോജിപ്പിക്കുന്നു
+  const combinedRecords = useMemo(() => {
+    if (!filters.date) return records;
+
+    const currentRecords = records.filter(r => r.date === filters.date);
+    const selectedDate = startOfDay(parseISO(filters.date));
+
+    // ഇന്ന് അപ്രൂവ്ഡ് ലീവ് ഉള്ളവരെ കണ്ടുപിടിക്കുന്നു
+    const leaveEntries = [];
+    users.forEach(user => {
+      // ഈ യൂസറിന് ഈ ദിവസം ഓൾറെഡി അറ്റൻഡൻസ് ഉണ്ടോ എന്ന് നോക്കുന്നു
+      const hasAttendance = currentRecords.find(r => r.uid === user.uid);
+      
+      if (!hasAttendance) {
+        const activeLeave = leaves.find(l => 
+          l.userId === user.uid && 
+          l.status === 'approved' &&
+          isWithinInterval(selectedDate, {
+            start: startOfDay(parseISO(l.startDate)),
+            end: endOfDay(parseISO(l.endDate))
+          })
+        );
+
+        if (activeLeave) {
+          leaveEntries.push({
+            id: `leave-${user.uid}`,
+            uid: user.uid,
+            name: user.name,
+            date: filters.date,
+            status: 'leave',
+            checkIn: 'ON LEAVE',
+            checkOut: activeLeave.type,
+            location: 'Remote'
+          });
+        }
+      }
+    });
+
+    return [...currentRecords, ...leaveEntries];
+  }, [records, leaves, users, filters.date]);
+
   const getFullMonthReport = (staffId, selectedMonth) => {
     if (!staffId || !selectedMonth) return [];
     const [year, month] = selectedMonth.split('-');
@@ -54,33 +94,12 @@ export default function AdminDashboard() {
       const currentDate = new Date(parseInt(year), parseInt(month) - 1, i);
       const dateStr = format(currentDate, 'yyyy-MM-dd');
       const record = staffRecords.find(r => r.date === dateStr);
-      
       let status = record ? record.status : 'absent';
-
-      // --- പുതിയ മാറ്റം: ലീവ് ചെക്ക് ചെയ്യുന്നു ---
-      const approvedLeave = leaves.find(l => 
-        l.userId === staffId && 
-        l.status === 'approved' &&
-        isWithinInterval(currentDate, {
-          start: startOfDay(new Date(l.startDate)),
-          end: endOfDay(new Date(l.endDate))
-        })
-      );
-
-      if (approvedLeave) {
-        status = 'leave';
-      } else if (isAfter(currentDate, today)) {
-        status = 'upcoming';
-      } else if (currentDate.getDay() === 0 && !record) {
-        status = 'holiday';
-      }
-
-      report.push({
-        date: dateStr,
-        status: status,
-        checkIn: record ? record.checkIn : '--:--',
-        checkOut: record ? record.checkOut : '--:--'
-      });
+      const approvedLeave = leaves.find(l => l.userId === staffId && l.status === 'approved' && isWithinInterval(currentDate, { start: startOfDay(parseISO(l.startDate)), end: endOfDay(parseISO(l.endDate)) }));
+      if (approvedLeave) status = 'leave';
+      else if (isAfter(currentDate, today)) status = 'upcoming';
+      else if (currentDate.getDay() === 0 && !record) status = 'holiday';
+      report.push({ date: dateStr, status: status, checkIn: record ? record.checkIn : '--:--', checkOut: record ? record.checkOut : '--:--' });
     }
     return report;
   };
@@ -91,12 +110,7 @@ export default function AdminDashboard() {
     if (!reportData.length) { toast.error('No data'); return; }
     const summaryMap = {};
     users.forEach(u => { summaryMap[u.uid] = { Name: u.name, Present: 0, Late: 0 }; });
-    reportData.forEach(r => {
-      if (summaryMap[r.uid]) {
-        if (r.status === 'present') summaryMap[r.uid].Present++;
-        else if (r.status === 'late') summaryMap[r.uid].Late++;
-      }
-    });
+    reportData.forEach(r => { if (summaryMap[r.uid]) { if (r.status === 'present') summaryMap[r.uid].Present++; else if (r.status === 'late') summaryMap[r.uid].Late++; } });
     const csv = ["Staff Name,Present Days,Late Entries", ...Object.values(summaryMap).map(s => `${s.Name},${s.Present},${s.Late}`)].join("\n");
     const blob = new Blob([csv], { type: 'text/csv' });
     const link = document.createElement("a");
@@ -107,10 +121,7 @@ export default function AdminDashboard() {
 
   const chartData = useMemo(() => {
     const last7Days = [...Array(7)].map((_, i) => format(subDays(new Date(), i), 'yyyy-MM-dd')).reverse();
-    const trend = last7Days.map(date => ({
-      name: format(new Date(date), 'EEE'),
-      present: records.filter(r => r.date === date).length
-    }));
+    const trend = last7Days.map(date => ({ name: format(new Date(date), 'EEE'), present: records.filter(r => r.date === date).length }));
     const today = format(new Date(), 'yyyy-MM-dd');
     const todayRecs = records.filter(r => r.date === today);
     const distribution = [
@@ -126,14 +137,12 @@ export default function AdminDashboard() {
       await updateDoc(doc(db, 'leaves', leave.id), { status: newStatus });
       toast.success(`Leave ${newStatus}`);
       emailjs.send('service_p8pt4hr', 'template_9rzi9fa', { to_name: leave.userName, to_email: leave.userEmail, status: newStatus.toUpperCase() }, 'YCJDmchHr727bPTJE');
-    } catch (e) { toast.error('Error updating leave'); }
+    } catch (e) { toast.error('Error'); }
   };
 
-  const filteredRecords = records.filter(r => {
+  const finalRecords = combinedRecords.filter(r => {
     const matchesSearch = r.name?.toLowerCase().includes(filters.search.toLowerCase());
-    const matchesDate = filters.date ? r.date === filters.date : true;
-    const matchesMonth = filters.month ? r.date?.startsWith(filters.month) : true;
-    return matchesSearch && matchesDate && matchesMonth;
+    return matchesSearch;
   });
 
   const selectedStaffForReport = (filters.search.length >= 2 && filters.month)
@@ -148,7 +157,7 @@ export default function AdminDashboard() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-display font-bold text-text-bright">Nexora Control Center</h1>
-          <p className="text-text-muted">Staff management dashboard</p>
+          <p className="text-text-muted">Staff management & real-time status</p>
         </div>
         <button onClick={exportMonthlySummary} className="btn-primary flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 py-3 px-6 rounded-xl shadow-lg">
           <Download size={18} /> Payroll Excel
@@ -195,27 +204,21 @@ export default function AdminDashboard() {
           </div>
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-7 gap-2">
             {getFullMonthReport(selectedStaffForReport.uid, filters.month).map((day) => {
-              const isAbsent = day.status === 'absent';
-              const isHoliday = day.status === 'holiday';
-              const isUpcoming = day.status === 'upcoming';
-              const isLeave = day.status === 'leave';
-              
+              const status = day.status;
               let bgColor = 'bg-emerald-500/10 border-emerald-500/20';
               let textColor = 'text-emerald-400';
-              
-              if (isAbsent) { bgColor = 'bg-rose-500/10 border-rose-500/20'; textColor = 'text-rose-400'; }
-              if (isHoliday) { bgColor = 'bg-blue-500/10 border-blue-500/20'; textColor = 'text-blue-400'; }
-              if (isUpcoming) { bgColor = 'bg-white/5 border-white/10'; textColor = 'text-text-muted'; }
-              if (isLeave) { bgColor = 'bg-amber-500/20 border-amber-500/40'; textColor = 'text-amber-400'; }
-
+              if (status === 'absent') { bgColor = 'bg-rose-500/10 border-rose-500/20'; textColor = 'text-rose-400'; }
+              if (status === 'holiday') { bgColor = 'bg-blue-500/10 border-blue-500/20'; textColor = 'text-blue-400'; }
+              if (status === 'upcoming') { bgColor = 'bg-white/5 border-white/10'; textColor = 'text-text-muted'; }
+              if (status === 'leave') { bgColor = 'bg-amber-500/20 border-amber-500/40'; textColor = 'text-amber-400'; }
               return (
                 <div key={day.date} className={`p-2 rounded-xl border transition-all ${bgColor}`}>
                   <p className="text-[9px] font-mono opacity-50">{day.date.split('-')[2]}/{day.date.split('-')[1]}</p>
                   <p className={`text-[10px] font-bold uppercase mt-0.5 ${textColor} flex items-center gap-1`}>
-                    {isLeave && <PlaneTakeoff size={10} />}
-                    {day.status === 'holiday' ? 'SUNDAY' : day.status}
+                    {status === 'leave' && <PlaneTakeoff size={10} />}
+                    {status === 'holiday' ? 'SUNDAY' : status}
                   </p>
-                  {!isAbsent && !isHoliday && !isUpcoming && !isLeave && <p className="text-[8px] mt-0.5 opacity-70">{day.checkIn}</p>}
+                  {status !== 'absent' && status !== 'holiday' && status !== 'upcoming' && status !== 'leave' && <p className="text-[8px] mt-0.5 opacity-70">{day.checkIn}</p>}
                 </div>
               );
             })}
@@ -227,13 +230,13 @@ export default function AdminDashboard() {
       <AnimatePresence>
         {leaves.filter(l => l.status === 'pending').length > 0 && (
           <div className="glass rounded-3xl p-6 border border-amber-500/20 bg-amber-500/5">
-            <h3 className="text-lg font-bold text-text-bright mb-4 flex items-center gap-2"><FileText size={20} className="text-amber-400" /> Action Required</h3>
+            <h3 className="text-lg font-bold text-text-bright mb-4 flex items-center gap-2"><FileText size={20} className="text-amber-400" /> Pending Leaves</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {leaves.filter(l => l.status === 'pending').map((leave) => (
                 <div key={leave.id} className="bg-white/5 rounded-2xl p-4 flex justify-between items-center border border-white/5">
                   <div>
                     <p className="font-bold text-text-bright">{leave.userName}</p>
-                    <p className="text-xs text-text-muted">{leave.startDate} to {leave.endDate} • {leave.type}</p>
+                    <p className="text-xs text-text-muted">{leave.startDate} to {leave.endDate}</p>
                   </div>
                   <div className="flex gap-2">
                     <button onClick={() => handleLeaveStatus(leave, 'approved')} className="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg"><Check size={18} /></button>
@@ -256,7 +259,7 @@ export default function AdminDashboard() {
           <input type="date" className="input-field outline-none" value={filters.date} onChange={(e) => setFilters({...filters, date: e.target.value, month: ''})} />
           <input type="month" className="input-field border-emerald-500/20 outline-none" value={filters.month} onChange={(e) => setFilters({...filters, month: e.target.value, date: ''})} />
         </div>
-        <AttendanceTable records={filteredRecords} showUser />
+        <AttendanceTable records={finalRecords} showUser />
       </div>
     </div>
   );
