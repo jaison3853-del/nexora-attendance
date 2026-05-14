@@ -41,36 +41,23 @@ export default function AdminDashboard() {
   const [filtered, setFiltered] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // Default ആയി ഇന്നത്തെ ഡേറ്റ് കാണിക്കും
   const [filters, setFilters] = useState({ 
-    search: '', 
-    status: '', 
-    date: format(new Date(), 'yyyy-MM-dd'),
-    month: ''
+    search: '', status: '', date: format(new Date(), 'yyyy-MM-dd'), month: ''
   });
 
+  // ഇവിടെ holidays ഒഴിവാക്കി sundays മാത്രം ആക്കി
+  const [monthStats, setMonthStats] = useState({ days: 0, sundays: 0, workingDays: 0 });
   const [page, setPage] = useState(1);
   const PER_PAGE = 20;
 
   useEffect(() => {
     getAllUsers().then(setUsers);
-
-    // അറ്റൻഡൻസ് ലൈവ് അപ്ഡേറ്റ്സ്
-    const unsubAttendance = subscribeToAttendance((data) => {
-      setRecords(data);
-      setLoading(false);
-    });
-
-    // ലീവ് റിക്വസ്റ്റുകൾ
+    const unsubAttendance = subscribeToAttendance((data) => { setRecords(data); setLoading(false); });
     const qLeaves = query(collection(db, 'leaves'), orderBy('createdAt', 'desc'));
     const unsubLeaves = onSnapshot(qLeaves, (snapshot) => {
       setLeaves(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
-
-    return () => {
-      unsubAttendance();
-      unsubLeaves();
-    };
+    return () => { unsubAttendance(); unsubLeaves(); };
   }, []);
 
   useEffect(() => {
@@ -81,45 +68,62 @@ export default function AdminDashboard() {
     }
     if (filters.status) f = f.filter(r => r.status === filters.status);
     
-    // Daily view അല്ലെങ്കിൽ Monthly view ലോജിക്
     if (filters.date) {
       f = f.filter(r => r.date === filters.date);
     } else if (filters.month) {
       f = f.filter(r => r.date?.startsWith(filters.month));
     }
-    
     setFiltered(f);
     setPage(1);
   }, [filters, records]);
 
-  // Monthly Excel Summary Export
+  // മാസം മാറുമ്പോൾ ഞായറാഴ്ചകൾ മാത്രം എണ്ണുന്നു
+  useEffect(() => {
+    const currentMonth = filters.month || format(new Date(), 'yyyy-MM');
+    const [year, month] = currentMonth.split('-');
+    const daysInMonth = new Date(year, month, 0).getDate();
+    
+    let sundaysCount = 0;
+    for (let i = 1; i <= daysInMonth; i++) {
+      if (new Date(year, month - 1, i).getDay() === 0) sundaysCount++;
+    }
+    
+    setMonthStats({
+      days: daysInMonth,
+      sundays: sundaysCount,
+      workingDays: daysInMonth - sundaysCount
+    });
+  }, [filters.month]);
+
+  // എക്സൽ ഡൗൺലോഡ് (Only Sundays deducted)
   const exportMonthlySummary = () => {
     const currentMonth = filters.month || format(new Date(), 'yyyy-MM');
     const reportData = records.filter(r => r.date?.startsWith(currentMonth));
     
     if (!reportData.length) {
-      toast.error('ഈ മാസത്തെ ഡാറ്റ ലഭ്യമല്ല');
+      toast.error('No data available for this month');
       return;
     }
 
     const summaryMap = {};
     users.forEach(u => {
-      summaryMap[u.uid] = { Name: u.name || 'Unknown', Present: 0, Late: 0, Absent: 0, Total: 0 };
+      summaryMap[u.uid] = { Name: u.name || 'Unknown', Present: 0, Late: 0 };
     });
 
     reportData.forEach(r => {
       if (summaryMap[r.uid]) {
-        summaryMap[r.uid].Total++;
         if (r.status === 'present') summaryMap[r.uid].Present++;
         else if (r.status === 'late') summaryMap[r.uid].Late++;
-        else if (r.status === 'absent') summaryMap[r.uid].Absent++;
       }
     });
 
-    const headers = ['Staff Name', 'Present Days', 'Late Entries', 'Absent Days', 'Total Records', 'Attendance %'];
+    const headers = ['Staff Name', 'Total Working Days', 'Present Days', 'Late Entries', 'Absent Days', 'Attendance %'];
     const rows = Object.values(summaryMap).map(s => {
-      const percentage = s.Total > 0 ? ((s.Present + s.Late) / s.Total * 100).toFixed(1) : 0;
-      return [s.Name, s.Present, s.Late, s.Absent, s.Total, percentage + '%'];
+      const { workingDays } = monthStats;
+      // Actual Absent = Total Working Days - (Present + Late)
+      const actualAbsent = Math.max(0, workingDays - (s.Present + s.Late));
+      const percentage = workingDays > 0 ? ((s.Present + s.Late) / workingDays * 100).toFixed(1) : 0;
+      return [s.Name, workingDays, s.Present, s.Late, actualAbsent, percentage + '%'];
     });
 
     const csvContent = [headers, ...rows].map(e => e.join(",")).join("\n");
@@ -127,19 +131,17 @@ export default function AdminDashboard() {
     const url = URL.createObjectURL(blob);
     const link = document.body.appendChild(document.createElement("a"));
     link.href = url;
-    link.download = `Nexora_Monthly_Report_${currentMonth}.csv`;
+    link.download = `Nexora_Payroll_Report_${currentMonth}.csv`;
     link.click();
     document.body.removeChild(link);
-    toast.success('മാസത്തെ റിപ്പോർട്ട് ഡൗൺലോഡ് ആയി!');
+    toast.success('Payroll Report Downloaded!');
   };
 
   const handleLeaveStatus = async (id, newStatus) => {
     try {
       await updateDoc(doc(db, 'leaves', id), { status: newStatus });
       toast.success(`Leave ${newStatus}!`);
-    } catch (error) {
-      toast.error('Error updating status');
-    }
+    } catch (error) { toast.error('Error updating status'); }
   };
 
   const stats = getAttendanceStats(records);
@@ -148,39 +150,43 @@ export default function AdminDashboard() {
     const dayRecs = records.filter(r => r.date === d);
     return { day: format(subDays(new Date(), 6 - i), 'EEE'), Present: dayRecs.filter(r => r.status === 'present').length, Late: dayRecs.filter(r => r.status === 'late').length, Absent: dayRecs.filter(r => r.status === 'absent').length };
   });
-
   const pieData = [{ name: 'Present', value: stats.present }, { name: 'Absent', value: stats.absent }, { name: 'Late', value: stats.late }].filter(d => d.value > 0);
 
   if (loading) return <Loader />;
-
   const paginated = filtered.slice(0, page * PER_PAGE);
   const pendingLeaves = leaves.filter(l => l.status === 'pending');
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-10 px-4">
-      {/* Header */}
+      {/* Header & Export Section */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
             <Shield size={14} className="text-violet-400" />
             <span className="text-xs text-violet-400 font-mono uppercase tracking-widest">Nexora SM Admin</span>
           </div>
-          <h1 className="text-2xl font-display font-bold text-text-bright">Daily Analytics & Management</h1>
+          <h1 className="text-2xl font-display font-bold text-text-bright">Analytics & Payroll</h1>
           <p className="text-xs text-text-muted mt-1 italic">
              {filters.date ? `Today's Updates: ${filters.date}` : `Monthly Records: ${filters.month}`}
           </p>
         </div>
-        <button onClick={exportMonthlySummary} className="btn-primary flex items-center gap-2 text-sm bg-violet-600 hover:bg-violet-700 py-2.5 px-5 rounded-xl transition-all">
-          <Download size={14} />
-          Monthly Report (CSV)
-        </button>
+        <div className="flex flex-col items-end gap-2">
+          <button onClick={exportMonthlySummary} className="btn-primary flex items-center gap-2 text-sm bg-emerald-600 hover:bg-emerald-700 py-2.5 px-5 rounded-xl transition-all shadow-lg shadow-emerald-500/20">
+            <Download size={14} /> Download Payroll Excel
+          </button>
+          {filters.month && (
+            <p className="text-[10px] font-mono text-emerald-400/80 bg-emerald-500/10 px-2 py-1 rounded-md border border-emerald-500/20">
+              Working Days: {monthStats.workingDays} (Sundays: {monthStats.sundays})
+            </p>
+          )}
+        </div>
       </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard icon={CheckCircle} label="Present Today" value={filtered.filter(r=>r.status==='present').length} color="emerald" />
-        <StatCard icon={Clock} label="Late Today" value={filtered.filter(r=>r.status==='late').length} color="amber" />
-        <StatCard icon={XCircle} label="Absent Today" value={filtered.filter(r=>r.status==='absent').length} color="rose" />
+        <StatCard icon={CheckCircle} label="Present Today" value={records.filter(r => r.date === format(new Date(), 'yyyy-MM-dd') && r.status === 'present').length} color="emerald" />
+        <StatCard icon={Clock} label="Late Today" value={records.filter(r => r.date === format(new Date(), 'yyyy-MM-dd') && r.status === 'late').length} color="amber" />
+        <StatCard icon={XCircle} label="Absent Today" value={records.filter(r => r.date === format(new Date(), 'yyyy-MM-dd') && r.status === 'absent').length} color="rose" />
         <StatCard icon={Users} label="Total Staff" value={users.length} color="violet" />
       </div>
 
@@ -189,8 +195,7 @@ export default function AdminDashboard() {
         {pendingLeaves.length > 0 && (
           <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-2xl p-5 border border-amber-500/20 shadow-xl">
             <h3 className="text-sm font-semibold text-text-bright mb-4 flex items-center gap-2">
-              <FileText size={16} className="text-amber-400" />
-              Pending Leave Requests
+              <FileText size={16} className="text-amber-400" /> Pending Leave Requests
             </h3>
             <div className="grid gap-3">
               {pendingLeaves.map((leave) => (
@@ -219,8 +224,8 @@ export default function AdminDashboard() {
             <input type="date" value={filters.date} onChange={e => setFilters({ ...filters, date: e.target.value, month: '' })} className="input-field w-full" />
           </div>
           <div className="flex flex-col gap-1.5">
-            <label className="text-[10px] uppercase font-mono text-muted ml-1 italic">Filter by Month</label>
-            <input type="month" value={filters.month} onChange={e => setFilters({ ...filters, month: e.target.value, date: '' })} className="input-field w-full" />
+            <label className="text-[10px] uppercase font-mono text-muted ml-1 italic">Filter by Month (Payroll)</label>
+            <input type="month" value={filters.month} onChange={e => setFilters({ ...filters, month: e.target.value, date: '' })} className="input-field w-full border-emerald-500/30 focus:border-emerald-500" />
           </div>
           <div className="flex flex-col gap-1.5">
             <label className="text-[10px] uppercase font-mono text-muted ml-1 italic">Search Staff</label>
@@ -238,13 +243,8 @@ export default function AdminDashboard() {
 
         <AttendanceTable records={paginated} showUser />
         
-        {filtered.length === 0 && (
-          <div className="py-20 text-center text-text-muted italic">No records found for this selection.</div>
-        )}
-
-        {paginated.length < filtered.length && (
-          <button onClick={() => setPage(p => p + 1)} className="btn-ghost text-sm w-full mt-4 py-3 border-t border-white/5">Load More</button>
-        )}
+        {filtered.length === 0 && <div className="py-20 text-center text-text-muted italic">No records found.</div>}
+        {paginated.length < filtered.length && <button onClick={() => setPage(p => p + 1)} className="btn-ghost text-sm w-full mt-4 py-3 border-t border-white/5">Load More</button>}
       </div>
     </div>
   );
