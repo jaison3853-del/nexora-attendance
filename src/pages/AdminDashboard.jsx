@@ -41,13 +41,11 @@ export default function AdminDashboard() {
     return () => { unsubAttendance(); unsubLeaves(); };
   }, []);
 
-  // 1. സ്മാർട്ട് കലണ്ടർ ലോജിക് (Sundays & Future Dates ഉൾപ്പെടുത്തിയത്)
   const getFullMonthReport = (staffId, selectedMonth) => {
     if (!staffId || !selectedMonth) return [];
     const [year, month] = selectedMonth.split('-');
     const daysCount = getDaysInMonth(new Date(parseInt(year), parseInt(month) - 1));
     const staffRecords = records.filter(r => r.uid === staffId && r.date.startsWith(selectedMonth));
-    
     const today = startOfDay(new Date());
     const report = [];
 
@@ -55,24 +53,10 @@ export default function AdminDashboard() {
       const currentDate = new Date(parseInt(year), parseInt(month) - 1, i);
       const dateStr = format(currentDate, 'yyyy-MM-dd');
       const record = staffRecords.find(r => r.date === dateStr);
-      
       let status = record ? record.status : 'absent';
-      
-      // വരാനിരിക്കുന്ന ദിവസമാണോ എന്ന് നോക്കുന്നു
-      if (isAfter(currentDate, today)) {
-        status = 'upcoming';
-      } 
-      // ഞായറാഴ്ചയാണോ എന്ന് നോക്കുന്നു (റെക്കോർഡ് ഇല്ലെങ്കിൽ മാത്രം Sunday എന്ന് കാണിക്കും)
-      else if (currentDate.getDay() === 0 && !record) {
-        status = 'holiday';
-      }
-
-      report.push({
-        date: dateStr,
-        status: status,
-        checkIn: record ? record.checkIn : '--:--',
-        checkOut: record ? record.checkOut : '--:--'
-      });
+      if (isAfter(currentDate, today)) status = 'upcoming';
+      else if (currentDate.getDay() === 0 && !record) status = 'holiday';
+      report.push({ date: dateStr, status: status, checkIn: record ? record.checkIn : '--:--', checkOut: record ? record.checkOut : '--:--' });
     }
     return report;
   };
@@ -121,10 +105,12 @@ export default function AdminDashboard() {
     } catch (e) { toast.error('Error'); }
   };
 
+  // --- ഫിൽട്ടർ ലോജിക് ശരിയാക്കി (Date Filter ഉൾപ്പെടുത്തി) ---
   const filteredRecords = records.filter(r => {
     const matchesSearch = r.name?.toLowerCase().includes(filters.search.toLowerCase());
+    const matchesDate = filters.date ? r.date === filters.date : true; // ഈ വരിയാണ് വിട്ടുപോയത്
     const matchesMonth = filters.month ? r.date?.startsWith(filters.month) : true;
-    return matchesSearch && matchesMonth;
+    return matchesSearch && matchesDate && matchesMonth;
   });
 
   const selectedStaffForReport = (filters.search.length >= 2 && filters.month)
@@ -139,9 +125,9 @@ export default function AdminDashboard() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-display font-bold text-text-bright">Nexora Control Center</h1>
-          <p className="text-text-muted">Jaison, manage your staff insights here</p>
+          <p className="text-text-muted">Staff management dashboard</p>
         </div>
-        <button onClick={exportMonthlySummary} className="btn-primary flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 py-3 px-6 rounded-xl">
+        <button onClick={exportMonthlySummary} className="btn-primary flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 py-3 px-6 rounded-xl shadow-lg">
           <Download size={18} /> Payroll Excel
         </button>
       </div>
@@ -163,7 +149,7 @@ export default function AdminDashboard() {
           </div>
         </div>
         <div className="glass rounded-3xl p-6 border border-white/5">
-          <h3 className="text-lg font-bold text-text-bright mb-6 text-center">Today's Summary</h3>
+          <h3 className="text-lg font-bold text-text-bright mb-6 text-center">Today's Status</h3>
           <div className="h-[200px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -189,14 +175,11 @@ export default function AdminDashboard() {
               const isAbsent = day.status === 'absent';
               const isHoliday = day.status === 'holiday';
               const isUpcoming = day.status === 'upcoming';
-              
               let bgColor = 'bg-emerald-500/10 border-emerald-500/20';
               let textColor = 'text-emerald-400';
-              
               if (isAbsent) { bgColor = 'bg-rose-500/10 border-rose-500/20'; textColor = 'text-rose-400'; }
               if (isHoliday) { bgColor = 'bg-blue-500/10 border-blue-500/20'; textColor = 'text-blue-400'; }
               if (isUpcoming) { bgColor = 'bg-white/5 border-white/10'; textColor = 'text-text-muted'; }
-
               return (
                 <div key={day.date} className={`p-2 rounded-xl border transition-all ${bgColor}`}>
                   <p className="text-[9px] font-mono opacity-50">{day.date.split('-')[2]}/{day.date.split('-')[1]}</p>
@@ -219,10 +202,7 @@ export default function AdminDashboard() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {leaves.filter(l => l.status === 'pending').map((leave) => (
                 <div key={leave.id} className="bg-white/5 rounded-2xl p-4 flex justify-between items-center border border-white/5">
-                  <div>
-                    <p className="font-bold text-text-bright">{leave.userName}</p>
-                    <p className="text-xs text-text-muted">{leave.startDate} to {leave.endDate}</p>
-                  </div>
+                  <div><p className="font-bold text-text-bright">{leave.userName}</p><p className="text-xs text-text-muted">{leave.startDate} to {leave.endDate}</p></div>
                   <div className="flex gap-2">
                     <button onClick={() => handleLeaveStatus(leave, 'approved')} className="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg"><Check size={18} /></button>
                     <button onClick={() => handleLeaveStatus(leave, 'rejected')} className="p-2 bg-rose-500/20 text-rose-400 rounded-lg"><X size={18} /></button>
