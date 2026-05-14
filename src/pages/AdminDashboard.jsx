@@ -17,6 +17,7 @@ import AttendanceTable from '../components/attendance/AttendanceTable';
 import StatCard from '../components/ui/StatCard';
 import Loader from '../components/ui/Loader';
 import toast from 'react-hot-toast';
+import emailjs from '@emailjs/browser'; // EmailJS Import
 
 const PIE_COLORS = ['#34d399', '#fb7185', '#fbbf24'];
 
@@ -45,7 +46,6 @@ export default function AdminDashboard() {
     search: '', status: '', date: format(new Date(), 'yyyy-MM-dd'), month: ''
   });
 
-  // ഇവിടെ holidays ഒഴിവാക്കി sundays മാത്രം ആക്കി
   const [monthStats, setMonthStats] = useState({ days: 0, sundays: 0, workingDays: 0 });
   const [page, setPage] = useState(1);
   const PER_PAGE = 20;
@@ -77,7 +77,6 @@ export default function AdminDashboard() {
     setPage(1);
   }, [filters, records]);
 
-  // മാസം മാറുമ്പോൾ ഞായറാഴ്ചകൾ മാത്രം എണ്ണുന്നു
   useEffect(() => {
     const currentMonth = filters.month || format(new Date(), 'yyyy-MM');
     const [year, month] = currentMonth.split('-');
@@ -95,7 +94,6 @@ export default function AdminDashboard() {
     });
   }, [filters.month]);
 
-  // എക്സൽ ഡൗൺലോഡ് (Only Sundays deducted)
   const exportMonthlySummary = () => {
     const currentMonth = filters.month || format(new Date(), 'yyyy-MM');
     const reportData = records.filter(r => r.date?.startsWith(currentMonth));
@@ -120,7 +118,6 @@ export default function AdminDashboard() {
     const headers = ['Staff Name', 'Total Working Days', 'Present Days', 'Late Entries', 'Absent Days', 'Attendance %'];
     const rows = Object.values(summaryMap).map(s => {
       const { workingDays } = monthStats;
-      // Actual Absent = Total Working Days - (Present + Late)
       const actualAbsent = Math.max(0, workingDays - (s.Present + s.Late));
       const percentage = workingDays > 0 ? ((s.Present + s.Late) / workingDays * 100).toFixed(1) : 0;
       return [s.Name, workingDays, s.Present, s.Late, actualAbsent, percentage + '%'];
@@ -137,21 +134,38 @@ export default function AdminDashboard() {
     toast.success('Payroll Report Downloaded!');
   };
 
-  const handleLeaveStatus = async (id, newStatus) => {
+  // --- LEAVE അപ്രൂവൽ & ഇമെയിൽ സെൻഡിംഗ് ---
+  const handleLeaveStatus = async (leave, newStatus) => {
     try {
-      await updateDoc(doc(db, 'leaves', id), { status: newStatus });
+      // 1. ഫയർബേസിൽ സ്റ്റാറ്റസ് മാറ്റുന്നു
+      await updateDoc(doc(db, 'leaves', leave.id), { status: newStatus });
       toast.success(`Leave ${newStatus}!`);
-    } catch (error) { toast.error('Error updating status'); }
+
+      // 2. സ്റ്റാഫിന് ഇമെയിൽ അയക്കുന്നു (EmailJS)
+      emailjs.send(
+        'service_p8pt4hr',      // Service ID
+        'template_9rzi9fa',     // Template ID
+        {
+          to_name: leave.userName,
+          to_email: leave.userEmail || 'jaison3853@gmail.com', // സ്റ്റാഫിന്റെ മെയിൽ ഐഡി ഇല്ലാത്തപ്പോൾ പോവാനുള്ള ബാക്കപ്പ് 
+          status: newStatus.toUpperCase(),
+          start_date: leave.startDate,
+          end_date: leave.endDate,
+          message: `Your leave request has been ${newStatus} by Admin.`
+        },
+        'YCJDmchHr727bPTJE'     // Public Key
+      ).then(() => {
+        toast.success("Email sent to staff!");
+      }).catch((err) => {
+        console.error("Email Error:", err);
+      });
+
+    } catch (error) { 
+      toast.error('Error updating status'); 
+    }
   };
 
   const stats = getAttendanceStats(records);
-  const last7 = Array.from({ length: 7 }, (_, i) => {
-    const d = format(subDays(new Date(), 6 - i), 'yyyy-MM-dd');
-    const dayRecs = records.filter(r => r.date === d);
-    return { day: format(subDays(new Date(), 6 - i), 'EEE'), Present: dayRecs.filter(r => r.status === 'present').length, Late: dayRecs.filter(r => r.status === 'late').length, Absent: dayRecs.filter(r => r.status === 'absent').length };
-  });
-  const pieData = [{ name: 'Present', value: stats.present }, { name: 'Absent', value: stats.absent }, { name: 'Late', value: stats.late }].filter(d => d.value > 0);
-
   if (loading) return <Loader />;
   const paginated = filtered.slice(0, page * PER_PAGE);
   const pendingLeaves = leaves.filter(l => l.status === 'pending');
@@ -166,9 +180,6 @@ export default function AdminDashboard() {
             <span className="text-xs text-violet-400 font-mono uppercase tracking-widest">Nexora SM Admin</span>
           </div>
           <h1 className="text-2xl font-display font-bold text-text-bright">Analytics & Payroll</h1>
-          <p className="text-xs text-text-muted mt-1 italic">
-             {filters.date ? `Today's Updates: ${filters.date}` : `Monthly Records: ${filters.month}`}
-          </p>
         </div>
         <div className="flex flex-col items-end gap-2">
           <button onClick={exportMonthlySummary} className="btn-primary flex items-center gap-2 text-sm bg-emerald-600 hover:bg-emerald-700 py-2.5 px-5 rounded-xl transition-all shadow-lg shadow-emerald-500/20">
@@ -180,14 +191,6 @@ export default function AdminDashboard() {
             </p>
           )}
         </div>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard icon={CheckCircle} label="Present Today" value={records.filter(r => r.date === format(new Date(), 'yyyy-MM-dd') && r.status === 'present').length} color="emerald" />
-        <StatCard icon={Clock} label="Late Today" value={records.filter(r => r.date === format(new Date(), 'yyyy-MM-dd') && r.status === 'late').length} color="amber" />
-        <StatCard icon={XCircle} label="Absent Today" value={records.filter(r => r.date === format(new Date(), 'yyyy-MM-dd') && r.status === 'absent').length} color="rose" />
-        <StatCard icon={Users} label="Total Staff" value={users.length} color="violet" />
       </div>
 
       {/* Leave Requests Section */}
@@ -206,8 +209,8 @@ export default function AdminDashboard() {
                     <p className="text-xs text-text-base mt-1 italic opacity-80">"{leave.reason}"</p>
                   </div>
                   <div className="flex gap-2">
-                    <button onClick={() => handleLeaveStatus(leave.id, 'approved')} className="p-2.5 bg-emerald-500/20 text-emerald-400 rounded-lg hover:bg-emerald-500/30 transition-all shadow-lg"><Check size={18} /></button>
-                    <button onClick={() => handleLeaveStatus(leave.id, 'rejected')} className="p-2.5 bg-rose-500/20 text-rose-400 rounded-lg hover:bg-rose-500/30 transition-all shadow-lg"><X size={18} /></button>
+                    <button onClick={() => handleLeaveStatus(leave, 'approved')} className="p-2.5 bg-emerald-500/20 text-emerald-400 rounded-lg hover:bg-emerald-500/30 transition-all shadow-lg"><Check size={18} /></button>
+                    <button onClick={() => handleLeaveStatus(leave, 'rejected')} className="p-2.5 bg-rose-500/20 text-rose-400 rounded-lg hover:bg-rose-500/30 transition-all shadow-lg"><X size={18} /></button>
                   </div>
                 </div>
               ))}
@@ -216,7 +219,7 @@ export default function AdminDashboard() {
         )}
       </AnimatePresence>
 
-      {/* Main Filter Section */}
+      {/* Main Filter & Table Section */}
       <div className="glass rounded-2xl p-5">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 border-b border-white/5 pb-6">
           <div className="flex flex-col gap-1.5">
