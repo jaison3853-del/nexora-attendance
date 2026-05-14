@@ -17,7 +17,7 @@ import Loader from '../components/ui/Loader';
 import toast from 'react-hot-toast';
 import emailjs from '@emailjs/browser';
 
-const PIE_COLORS = ['#10b981', '#f59e0b', '#ef4444', '#f59e0b']; 
+const PIE_COLORS = ['#10b981', '#f59e0b', '#ef4444']; 
 
 export default function AdminDashboard() {
   const [records, setRecords] = useState([]);
@@ -41,7 +41,7 @@ export default function AdminDashboard() {
     return () => { unsubAttendance(); unsubLeaves(); };
   }, []);
 
-  // --- NEW LOGIC: TIME BASED LEAVE DISPLAY ---
+  // --- പ്രായോഗികമായ ലീവ് ലോജിക് (11 AM Cutoff) ---
   const combinedRecords = useMemo(() => {
     if (!filters.date) return records;
 
@@ -49,19 +49,20 @@ export default function AdminDashboard() {
     const selectedDate = startOfDay(parseISO(filters.date));
     const now = new Date();
     
-    // Cutoff time: 10:30 AM
+    // ഇന്ന് വ്യാഴാഴ്ചയാണോ എന്ന് നോക്കുന്നു, സമയം 11 AM കഴിഞ്ഞോ എന്ന് നോക്കുന്നു
     const isToday = format(now, 'yyyy-MM-dd') === filters.date;
-    const isPastCutoff = now.getHours() > 10 || (now.getHours() === 10 && now.getMinutes() >= 30);
+    const isPastCutoff = now.getHours() >= 11; // 11 മണി കഴിഞ്ഞാൽ മാത്രം
 
     const leaveEntries = [];
 
-    // Sunday allenkil maathram leave check chyyam
+    // ഞായറാഴ്ചയല്ലെങ്കിൽ മാത്രം ഇത് നോക്കിയാൽ മതി
     if (selectedDate.getDay() !== 0) {
       users.forEach(user => {
-        const hasAttendance = currentRecords.find(r => r.uid === user.uid);
+        // ആ സ്റ്റാഫ് ഇന്ന് പഞ്ച് ചെയ്തിട്ടുണ്ടോ എന്ന് നോക്കുന്നു
+        const punchRecord = currentRecords.find(r => r.uid === user.uid);
         
-        // Punch chyyathavarum, cutoff time kazhinjavarum maathram
-        if (!hasAttendance && (!isToday || isPastCutoff)) {
+        // പഞ്ച് ചെയ്തിട്ടില്ലെങ്കിൽ, സമയം 11 കഴിഞ്ഞിട്ടുണ്ടെങ്കിൽ മാത്രം ലീവ് ആണോ എന്ന് നോക്കുന്നു
+        if (!punchRecord && (!isToday || isPastCutoff)) {
           const activeLeave = leaves.find(l => 
             l.userId === user.uid && 
             l.status === 'approved' &&
@@ -80,7 +81,7 @@ export default function AdminDashboard() {
               status: 'leave',
               checkIn: 'ON LEAVE',
               checkOut: activeLeave.type,
-              location: 'Remote'
+              location: 'Approved Leave'
             });
           }
         }
@@ -90,7 +91,6 @@ export default function AdminDashboard() {
     return [...currentRecords, ...leaveEntries];
   }, [records, leaves, users, filters.date]);
 
-  // Monthly Report and other logics...
   const getFullMonthReport = (staffId, selectedMonth) => {
     if (!staffId || !selectedMonth) return [];
     const [year, month] = selectedMonth.split('-');
@@ -157,7 +157,7 @@ export default function AdminDashboard() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-display font-bold text-text-bright">Nexora Control Center</h1>
-          <p className="text-text-muted">Staff management & real-time status</p>
+          <p className="text-text-muted">Staff management & real-time monitoring</p>
         </div>
         <button onClick={exportMonthlySummary} className="btn-primary flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 py-3 px-6 rounded-xl">
           <Download size={18} /> Payroll Excel
@@ -195,10 +195,30 @@ export default function AdminDashboard() {
         </motion.div>
       )}
 
+      {/* Actionable Leaves */}
+      <AnimatePresence>
+        {leaves.filter(l => l.status === 'pending').length > 0 && (
+          <div className="glass rounded-3xl p-6 border border-amber-500/20 bg-amber-500/5">
+            <h3 className="text-lg font-bold text-text-bright mb-4 flex items-center gap-2"><FileText size={20} className="text-amber-400" /> Action Required</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {leaves.filter(l => l.status === 'pending').map((leave) => (
+                <div key={leave.id} className="bg-white/5 rounded-2xl p-4 flex justify-between items-center border border-white/5">
+                  <div><p className="font-bold text-text-bright">{leave.userName}</p><p className="text-xs text-text-muted">{leave.startDate} to {leave.endDate}</p></div>
+                  <div className="flex gap-2">
+                    <button onClick={() => handleLeaveStatus(leave, 'approved')} className="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg"><Check size={18} /></button>
+                    <button onClick={() => handleLeaveStatus(leave, 'rejected')} className="p-2 bg-rose-500/20 text-rose-400 rounded-lg"><X size={18} /></button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Filters & Table */}
       <div className="glass rounded-3xl p-6 border border-white/5">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" size={18} /><input type="text" placeholder="Search staff..." className="input-field pl-10 w-full outline-none" value={filters.search} onChange={(e) => setFilters({...filters, search: e.target.value})} /></div>
+          <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" size={18} /><input type="text" placeholder="Search staff name..." className="input-field pl-10 w-full outline-none" value={filters.search} onChange={(e) => setFilters({...filters, search: e.target.value})} /></div>
           <input type="date" className="input-field outline-none" value={filters.date} onChange={(e) => setFilters({...filters, date: e.target.value, month: ''})} />
           <input type="month" className="input-field border-emerald-500/20 outline-none" value={filters.month} onChange={(e) => setFilters({...filters, month: e.target.value, date: ''})} />
         </div>
