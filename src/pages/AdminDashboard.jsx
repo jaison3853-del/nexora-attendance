@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users, CheckCircle, XCircle, Clock, TrendingUp, Download,
-  Search, RefreshCw, Shield, FileText, Check, X, Calendar, User
+  Search, RefreshCw, Shield, FileText, Check, X, Calendar, User, PlaneTakeoff
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -11,7 +11,7 @@ import {
 import { subscribeToAttendance, getAllUsers } from '../services/attendanceService';
 import { db } from '../firebase/config';
 import { collection, query, onSnapshot, orderBy, updateDoc, doc } from 'firebase/firestore';
-import { format, subDays, getDaysInMonth, isAfter, startOfDay } from 'date-fns';
+import { format, subDays, getDaysInMonth, isAfter, startOfDay, isWithinInterval, endOfDay } from 'date-fns';
 import AttendanceTable from '../components/attendance/AttendanceTable';
 import Loader from '../components/ui/Loader';
 import toast from 'react-hot-toast';
@@ -41,6 +41,7 @@ export default function AdminDashboard() {
     return () => { unsubAttendance(); unsubLeaves(); };
   }, []);
 
+  // 1. സ്മാർട്ട് കലണ്ടർ ലോജിക് (LEAVE കൂടി ഉൾപ്പെടുത്തിയത്)
   const getFullMonthReport = (staffId, selectedMonth) => {
     if (!staffId || !selectedMonth) return [];
     const [year, month] = selectedMonth.split('-');
@@ -53,10 +54,33 @@ export default function AdminDashboard() {
       const currentDate = new Date(parseInt(year), parseInt(month) - 1, i);
       const dateStr = format(currentDate, 'yyyy-MM-dd');
       const record = staffRecords.find(r => r.date === dateStr);
+      
       let status = record ? record.status : 'absent';
-      if (isAfter(currentDate, today)) status = 'upcoming';
-      else if (currentDate.getDay() === 0 && !record) status = 'holiday';
-      report.push({ date: dateStr, status: status, checkIn: record ? record.checkIn : '--:--', checkOut: record ? record.checkOut : '--:--' });
+
+      // --- പുതിയ മാറ്റം: ലീവ് ചെക്ക് ചെയ്യുന്നു ---
+      const approvedLeave = leaves.find(l => 
+        l.userId === staffId && 
+        l.status === 'approved' &&
+        isWithinInterval(currentDate, {
+          start: startOfDay(new Date(l.startDate)),
+          end: endOfDay(new Date(l.endDate))
+        })
+      );
+
+      if (approvedLeave) {
+        status = 'leave';
+      } else if (isAfter(currentDate, today)) {
+        status = 'upcoming';
+      } else if (currentDate.getDay() === 0 && !record) {
+        status = 'holiday';
+      }
+
+      report.push({
+        date: dateStr,
+        status: status,
+        checkIn: record ? record.checkIn : '--:--',
+        checkOut: record ? record.checkOut : '--:--'
+      });
     }
     return report;
   };
@@ -102,13 +126,12 @@ export default function AdminDashboard() {
       await updateDoc(doc(db, 'leaves', leave.id), { status: newStatus });
       toast.success(`Leave ${newStatus}`);
       emailjs.send('service_p8pt4hr', 'template_9rzi9fa', { to_name: leave.userName, to_email: leave.userEmail, status: newStatus.toUpperCase() }, 'YCJDmchHr727bPTJE');
-    } catch (e) { toast.error('Error'); }
+    } catch (e) { toast.error('Error updating leave'); }
   };
 
-  // --- ഫിൽട്ടർ ലോജിക് ശരിയാക്കി (Date Filter ഉൾപ്പെടുത്തി) ---
   const filteredRecords = records.filter(r => {
     const matchesSearch = r.name?.toLowerCase().includes(filters.search.toLowerCase());
-    const matchesDate = filters.date ? r.date === filters.date : true; // ഈ വരിയാണ് വിട്ടുപോയത്
+    const matchesDate = filters.date ? r.date === filters.date : true;
     const matchesMonth = filters.month ? r.date?.startsWith(filters.month) : true;
     return matchesSearch && matchesDate && matchesMonth;
   });
@@ -134,9 +157,9 @@ export default function AdminDashboard() {
 
       {/* Analytics */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 glass rounded-3xl p-6 border border-white/5">
+        <div className="lg:col-span-2 glass rounded-3xl p-6 border border-white/5 h-[320px]">
           <h3 className="text-lg font-bold text-text-bright mb-6 flex items-center gap-2"><TrendingUp size={20} className="text-cyan-400" /> Weekly Presence</h3>
-          <div className="h-[250px] w-full">
+          <div className="h-full w-full pb-8">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData.trend}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
@@ -149,7 +172,7 @@ export default function AdminDashboard() {
           </div>
         </div>
         <div className="glass rounded-3xl p-6 border border-white/5">
-          <h3 className="text-lg font-bold text-text-bright mb-6 text-center">Today's Status</h3>
+          <h3 className="text-lg font-bold text-text-bright mb-6 text-center">Today's Summary</h3>
           <div className="h-[200px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -175,18 +198,24 @@ export default function AdminDashboard() {
               const isAbsent = day.status === 'absent';
               const isHoliday = day.status === 'holiday';
               const isUpcoming = day.status === 'upcoming';
+              const isLeave = day.status === 'leave';
+              
               let bgColor = 'bg-emerald-500/10 border-emerald-500/20';
               let textColor = 'text-emerald-400';
+              
               if (isAbsent) { bgColor = 'bg-rose-500/10 border-rose-500/20'; textColor = 'text-rose-400'; }
               if (isHoliday) { bgColor = 'bg-blue-500/10 border-blue-500/20'; textColor = 'text-blue-400'; }
               if (isUpcoming) { bgColor = 'bg-white/5 border-white/10'; textColor = 'text-text-muted'; }
+              if (isLeave) { bgColor = 'bg-amber-500/20 border-amber-500/40'; textColor = 'text-amber-400'; }
+
               return (
                 <div key={day.date} className={`p-2 rounded-xl border transition-all ${bgColor}`}>
                   <p className="text-[9px] font-mono opacity-50">{day.date.split('-')[2]}/{day.date.split('-')[1]}</p>
-                  <p className={`text-[10px] font-bold uppercase mt-0.5 ${textColor}`}>
+                  <p className={`text-[10px] font-bold uppercase mt-0.5 ${textColor} flex items-center gap-1`}>
+                    {isLeave && <PlaneTakeoff size={10} />}
                     {day.status === 'holiday' ? 'SUNDAY' : day.status}
                   </p>
-                  {!isAbsent && !isHoliday && !isUpcoming && <p className="text-[8px] mt-0.5 opacity-70">{day.checkIn}</p>}
+                  {!isAbsent && !isHoliday && !isUpcoming && !isLeave && <p className="text-[8px] mt-0.5 opacity-70">{day.checkIn}</p>}
                 </div>
               );
             })}
@@ -202,7 +231,10 @@ export default function AdminDashboard() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {leaves.filter(l => l.status === 'pending').map((leave) => (
                 <div key={leave.id} className="bg-white/5 rounded-2xl p-4 flex justify-between items-center border border-white/5">
-                  <div><p className="font-bold text-text-bright">{leave.userName}</p><p className="text-xs text-text-muted">{leave.startDate} to {leave.endDate}</p></div>
+                  <div>
+                    <p className="font-bold text-text-bright">{leave.userName}</p>
+                    <p className="text-xs text-text-muted">{leave.startDate} to {leave.endDate} • {leave.type}</p>
+                  </div>
                   <div className="flex gap-2">
                     <button onClick={() => handleLeaveStatus(leave, 'approved')} className="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg"><Check size={18} /></button>
                     <button onClick={() => handleLeaveStatus(leave, 'rejected')} className="p-2 bg-rose-500/20 text-rose-400 rounded-lg"><X size={18} /></button>
@@ -219,10 +251,10 @@ export default function AdminDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" size={18} />
-            <input type="text" placeholder="Search staff..." className="input-field pl-10 w-full" value={filters.search} onChange={(e) => setFilters({...filters, search: e.target.value})} />
+            <input type="text" placeholder="Search staff..." className="input-field pl-10 w-full outline-none" value={filters.search} onChange={(e) => setFilters({...filters, search: e.target.value})} />
           </div>
-          <input type="date" className="input-field" value={filters.date} onChange={(e) => setFilters({...filters, date: e.target.value, month: ''})} />
-          <input type="month" className="input-field border-emerald-500/20" value={filters.month} onChange={(e) => setFilters({...filters, month: e.target.value, date: ''})} />
+          <input type="date" className="input-field outline-none" value={filters.date} onChange={(e) => setFilters({...filters, date: e.target.value, month: ''})} />
+          <input type="month" className="input-field border-emerald-500/20 outline-none" value={filters.month} onChange={(e) => setFilters({...filters, month: e.target.value, date: ''})} />
         </div>
         <AttendanceTable records={filteredRecords} showUser />
       </div>
