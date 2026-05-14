@@ -1,4 +1,3 @@
-// src/pages/LeaveRequest.jsx
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { FileText, Calendar, Send, Loader2 } from 'lucide-react';
@@ -35,27 +34,39 @@ export default function LeaveRequest() {
         createdAt: serverTimestamp()
       });
 
-      // 2. രണ്ട് അഡ്മിൻമാർക്കും മെയിൽ നോട്ടിഫിക്കേഷൻ അയക്കുന്നു
-      // EmailJS വഴി ശരത്തിനും ജെയ്‌സണിനും ഒരേപോലെ മെയിൽ പോകും
-      await emailjs.send(
-        'service_p8pt4hr',      // Service ID
-        'template_fgbhpoa',     // നിങ്ങളുടെ പുതിയ Template ID
-        {
-          staff_name: user.name,
-          leave_type: formData.type,
-          from_date: formData.startDate,
-          to_date: formData.endDate,
-          reason: formData.reason,
-          admin_email: 'jaison3853@gmail.com, sarathmurali33@gmail.com' 
-        },
-        'YCJDmchHr727bPTJE'     // നിങ്ങളുടെ Public Key
+      // EmailJS ഡാറ്റ തയ്യാറാക്കുന്നു
+      const emailParams = {
+        staff_name: user.name,
+        leave_type: formData.type,
+        from_date: formData.startDate,
+        to_date: formData.endDate,
+        reason: formData.reason,
+      };
+
+      // 2. ഒന്നാമത്തെ അഡ്മിന് (ജെയ്‌സൺ) മെയിൽ അയക്കുന്നു
+      const email1 = emailjs.send(
+        'service_p8pt4hr',
+        'template_fgbhpoa',
+        { ...emailParams, admin_email: 'jaison3853@gmail.com' },
+        'YCJDmchHr727bPTJE'
       );
 
-      toast.success('Leave applied! Admins notified.');
+      // 3. രണ്ടാമത്തെ അഡ്മിന് (ശരത് മുരളി) മെയിൽ അയക്കുന്നു
+      const email2 = emailjs.send(
+        'service_p8pt4hr',
+        'template_fgbhpoa',
+        { ...emailParams, admin_email: 'sarathmurali33@gmail.com' },
+        'YCJDmchHr727bPTJE'
+      );
+
+      // രണ്ട് മെയിലുകളും അയച്ചു എന്ന് ഉറപ്പാക്കുന്നു
+      await Promise.all([email1, email2]);
+
+      toast.success('Leave applied! Both Admins notified.');
       navigate('/dashboard');
     } catch (err) {
-      console.error("Email/Firebase Error:", err);
-      toast.error('Submission failed. Please try again.');
+      console.error("Submission Error:", err);
+      toast.error('Failed to notify admins. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -63,14 +74,18 @@ export default function LeaveRequest() {
 
   return (
     <div className="max-w-2xl mx-auto py-8 px-4">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-3xl p-8 border border-white/5 shadow-2xl">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }} 
+        animate={{ opacity: 1, y: 0 }} 
+        className="glass rounded-3xl p-8 border border-white/5 shadow-2xl"
+      >
         <div className="flex items-center gap-4 mb-8 border-b border-white/5 pb-6">
           <div className="p-3 rounded-2xl bg-violet-500/20 text-violet-400">
             <FileText size={28} />
           </div>
           <div>
             <h1 className="text-2xl font-display font-bold text-text-bright">Apply for Leave</h1>
-            <p className="text-sm text-text-muted">Notification will be sent to both Admins</p>
+            <p className="text-sm text-text-muted">Jaison and Sarath will be notified via email</p>
           </div>
         </div>
 
@@ -81,7 +96,7 @@ export default function LeaveRequest() {
               <select 
                 value={formData.type}
                 onChange={(e) => setFormData({...formData, type: e.target.value})}
-                className="input-field w-full"
+                className="input-field w-full outline-none"
                 required
               >
                 <option value="Casual Leave">Casual Leave</option>
@@ -101,7 +116,7 @@ export default function LeaveRequest() {
                   type="date" 
                   value={formData.startDate}
                   onChange={(e) => setFormData({...formData, startDate: e.target.value})}
-                  className="input-field pl-10 w-full" 
+                  className="input-field pl-10 w-full outline-none" 
                   required 
                 />
               </div>
@@ -114,7 +129,7 @@ export default function LeaveRequest() {
                   type="date" 
                   value={formData.endDate}
                   onChange={(e) => setFormData({...formData, endDate: e.target.value})}
-                  className="input-field pl-10 w-full" 
+                  className="input-field pl-10 w-full outline-none" 
                   required 
                 />
               </div>
@@ -127,8 +142,8 @@ export default function LeaveRequest() {
               rows="4"
               value={formData.reason}
               onChange={(e) => setFormData({...formData, reason: e.target.value})}
-              className="input-field w-full py-3 resize-none"
-              placeholder="Why do you need leave?"
+              className="input-field w-full py-3 resize-none outline-none"
+              placeholder="Provide a detailed reason..."
               required
             ></textarea>
           </div>
@@ -137,17 +152,17 @@ export default function LeaveRequest() {
             <button 
               type="button" 
               onClick={() => navigate('/dashboard')}
-              className="btn-ghost flex-1 py-4 rounded-2xl border border-white/5 font-bold"
+              className="btn-ghost flex-1 py-4 rounded-2xl border border-white/5 font-bold hover:bg-white/5 transition-all"
             >
               Cancel
             </button>
             <button 
               type="submit" 
               disabled={loading}
-              className="btn-primary flex-1 py-4 rounded-2xl flex items-center justify-center gap-2 font-bold shadow-lg shadow-cyan-500/20"
+              className="btn-primary flex-1 py-4 rounded-2xl flex items-center justify-center gap-2 font-bold shadow-lg shadow-cyan-500/20 disabled:opacity-50"
             >
               {loading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
-              {loading ? 'Sending...' : 'Apply Now'}
+              {loading ? 'Processing...' : 'Apply Now'}
             </button>
           </div>
         </form>
