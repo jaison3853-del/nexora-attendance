@@ -42,41 +42,56 @@ export default function AdminDashboard() {
     return () => { unsubAttendance(); unsubLeaves(); };
   }, []);
 
-  // --- 1. SUPER SMART LEADERBOARD (LIVE WORKING HOURS FIX) ---
+  // ഡാറ്റാബേസിൽ ഫീൽഡ് പേര് എന്തായാലും കണ്ടുപിടിക്കാനുള്ള സ്മാർട്ട് ലോജിക്
+  const getInTime = (r) => r?.checkIn || r?.punchIn || r?.inTime || null;
+  const getOutTime = (r) => r?.checkOut || r?.punchOut || r?.outTime || null;
+
+  // --- 1. SUPER SMART LEADERBOARD (Bulletproof Live Time Extractor) ---
   const leaderboard = useMemo(() => {
     const currentMonth = filters.month || format(new Date(), 'yyyy-MM');
     const now = new Date();
     const todayDateStr = format(now, 'yyyy-MM-dd');
     const currentSecs = (now.getHours() * 3600) + (now.getMinutes() * 60) + now.getSeconds();
     
-    // സമയം കൃത്യമായി എടുക്കാനുള്ള ഫങ്ക്ഷൻ
-    const parseTime = (timeStr) => {
-      if (!timeStr || typeof timeStr !== 'string') return null;
-      const match = timeStr.match(/(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
-      if (!match) return null;
-
-      let h = parseInt(match[1], 10);
-      const m = parseInt(match[2], 10);
-      const s = match[3] ? parseInt(match[3], 10) : 0;
-      const lowerStr = timeStr.toLowerCase();
-
-      if (lowerStr.includes('pm') && h < 12) h += 12;
-      if (lowerStr.includes('am') && h === 12) h = 0;
-      return (h * 3600) + (m * 60) + s;
+    const parseTime = (val) => {
+      if (!val) return null;
+      if (val.toDate) {
+        const d = val.toDate();
+        return (d.getHours() * 3600) + (d.getMinutes() * 60) + d.getSeconds();
+      }
+      if (typeof val === 'string') {
+        const nums = val.match(/\d+/g);
+        if (!nums || nums.length < 2) return null;
+        let h = parseInt(nums[0], 10);
+        let m = parseInt(nums[1], 10);
+        let s = nums.length > 2 ? parseInt(nums[2], 10) : 0;
+        const lower = val.toLowerCase();
+        if (lower.includes('pm') && h < 12) h += 12;
+        if (lower.includes('am') && h === 12) h = 0;
+        return (h * 3600) + (m * 60) + s;
+      }
+      return null;
     };
 
     const monthStats = users.map(user => {
-      const userRecords = records.filter(r => r.uid === user.uid && r.date.startsWith(currentMonth) && (r.status === 'present' || r.status === 'late'));
+      const userRecords = records.filter(r => 
+        r.uid === user.uid && 
+        r.date?.startsWith(currentMonth) && 
+        (r.status?.toLowerCase() === 'present' || r.status?.toLowerCase() === 'late')
+      );
       
       let totalWorkingSeconds = 0;
       let presentDays = userRecords.length;
 
       userRecords.forEach(r => {
-        const inSec = parseTime(r.checkIn);
-        let outSec = parseTime(r.checkOut);
+        const inVal = getInTime(r);
+        let outVal = getOutTime(r);
 
-        // LIVE TRACKING: ഇന്ന് വർക്കിങ് ആണെങ്കിൽ ഇതുവരെയുള്ള സമയം എടുക്കും!
-        if (r.checkOut === 'Working...' && r.date === todayDateStr) {
+        const inSec = parseTime(inVal);
+        let outSec = parseTime(outVal);
+
+        // LIVE TRACKING: Working... സ്റ്റാറ്റസ് ആണെങ്കിൽ ഇപ്പോഴത്തെ സമയം എടുക്കും
+        if ((outVal === 'Working...' || !outVal) && r.date === todayDateStr) {
           outSec = currentSecs;
         }
 
@@ -87,21 +102,13 @@ export default function AdminDashboard() {
         }
       });
       
-      // സമയം മണിക്കൂറിലേക്കും മിനിറ്റിലേക്കും മാറ്റുന്നു
       const totalHours = Math.floor(totalWorkingSeconds / 3600);
       const totalMinutes = Math.floor((totalWorkingSeconds % 3600) / 60);
       const workTimeStr = `${totalHours}h ${totalMinutes}m`;
 
-      return { 
-        name: user.name, 
-        uid: user.uid, 
-        totalWorkingSeconds, 
-        workTimeStr,
-        presentDays
-      };
+      return { name: user.name, uid: user.uid, totalWorkingSeconds, workTimeStr, presentDays };
     });
 
-    // ഏറ്റവും കൂടുതൽ സമയം വർക്ക് ചെയ്തവർ ആദ്യം വരും
     return monthStats.sort((a, b) => b.totalWorkingSeconds - a.totalWorkingSeconds).slice(0, 3);
   }, [records, users, filters.month]);
 
@@ -141,9 +148,10 @@ export default function AdminDashboard() {
 
     return combined.filter(r => r.name?.toLowerCase().includes(filters.search.toLowerCase()))
       .map(record => {
+        const outVal = getOutTime(record);
         const isPastDay = record.date !== format(now, 'yyyy-MM-dd');
-        if (record.checkOut === 'Working...' && (isPast9PM || isPastDay)) {
-          return { ...record, status: 'Forgot Out', checkOut: 'AUTO-MISS' };
+        if ((outVal === 'Working...' || !outVal) && (isPast9PM || isPastDay)) {
+          return { ...record, status: 'Forgot Out', checkOut: 'AUTO-MISS', punchOut: 'AUTO-MISS' };
         }
         return record;
       });
@@ -180,7 +188,8 @@ export default function AdminDashboard() {
       else if (isAfter(currentDate, today)) status = 'upcoming';
       else if (currentDate.getDay() === 0 && !record) status = 'holiday';
       
-      report.push({ date: dateStr, status: status, checkIn: record ? record.checkIn : '--:--', checkOut: record ? record.checkOut : '--:--' });
+      const inVal = record ? (getInTime(record) || '--:--') : '--:--';
+      report.push({ date: dateStr, status: status, checkIn: inVal });
     }
     return report;
   };
@@ -192,7 +201,7 @@ export default function AdminDashboard() {
     if (!reportData.length) { toast.error('No data'); return; }
     const summaryMap = {};
     users.forEach(u => { summaryMap[u.uid] = { Name: u.name, Present: 0, Late: 0 }; });
-    reportData.forEach(r => { if (summaryMap[r.uid]) { if (r.status === 'present') summaryMap[r.uid].Present++; else if (r.status === 'late') summaryMap[r.uid].Late++; } });
+    reportData.forEach(r => { if (summaryMap[r.uid]) { if (r.status?.toLowerCase() === 'present') summaryMap[r.uid].Present++; else if (r.status?.toLowerCase() === 'late') summaryMap[r.uid].Late++; } });
     const csv = ["Staff Name,Present Days,Late Entries", ...Object.values(summaryMap).map(s => `${s.Name},${s.Present},${s.Late}`)].join("\n");
     const blob = new Blob([csv], { type: 'text/csv' });
     const link = document.createElement("a");
@@ -214,8 +223,8 @@ export default function AdminDashboard() {
     const trend = last7Days.map(date => ({ name: format(new Date(date), 'EEE'), present: records.filter(r => r.date === date).length }));
     const todayRecs = records.filter(r => r.date === format(new Date(), 'yyyy-MM-dd'));
     return { trend, distribution: [
-      { name: 'On Time', value: todayRecs.filter(r => r.status === 'present').length },
-      { name: 'Late', value: todayRecs.filter(r => r.status === 'late').length },
+      { name: 'On Time', value: todayRecs.filter(r => r.status?.toLowerCase() === 'present').length },
+      { name: 'Late', value: todayRecs.filter(r => r.status?.toLowerCase() === 'late').length },
       { name: 'Absent', value: Math.max(0, users.length - todayRecs.length) }
     ]};
   }, [records, users]);
@@ -270,7 +279,7 @@ export default function AdminDashboard() {
                 </div>
               </div>
             ))}
-            {leaderboard.length === 0 && <p className="text-sm text-text-muted text-center pt-4">No data this month yet.</p>}
+            {leaderboard.length === 0 && <p className="text-sm text-text-muted text-center pt-4">No completed shifts yet.</p>}
           </div>
         </motion.div>
 
@@ -323,7 +332,7 @@ export default function AdminDashboard() {
                 <div key={day.date} className={`p-2 rounded-xl border ${color} transition-all`}>
                   <p className="text-[9px] opacity-60 font-mono">{day.date.split('-')[2]}/{day.date.split('-')[1]}</p>
                   <p className="text-[10px] font-bold uppercase mt-0.5 flex items-center gap-1">{day.status === 'leave' && <PlaneTakeoff size={10} />}{day.status === 'holiday' ? 'SUNDAY' : day.status}</p>
-                  {(day.status === 'present' || day.status === 'late' || day.status === 'Forgot Out') && <p className="text-[8px] opacity-80 mt-0.5">{day.checkIn}</p>}
+                  {(day.status?.toLowerCase() === 'present' || day.status?.toLowerCase() === 'late' || day.status === 'Forgot Out') && <p className="text-[8px] opacity-80 mt-0.5">{day.checkIn}</p>}
                 </div>
               );
             })}
