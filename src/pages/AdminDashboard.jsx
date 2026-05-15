@@ -42,28 +42,30 @@ export default function AdminDashboard() {
     return () => { unsubAttendance(); unsubLeaves(); };
   }, []);
 
-  // --- 1. SUPER SMART LEADERBOARD (Total Working Time Logic) ---
+  // --- 1. SUPER SMART LEADERBOARD (LIVE WORKING HOURS FIX) ---
   const leaderboard = useMemo(() => {
     const currentMonth = filters.month || format(new Date(), 'yyyy-MM');
+    const now = new Date();
+    const todayDateStr = format(now, 'yyyy-MM-dd');
+    const currentSecs = (now.getHours() * 3600) + (now.getMinutes() * 60) + now.getSeconds();
     
-    // സമയം സെക്കൻഡിലേക്ക് മാറ്റാനുള്ള ഫങ്ക്ഷൻ
+    // സമയം കൃത്യമായി എടുക്കാനുള്ള ഫങ്ക്ഷൻ
     const parseTime = (timeStr) => {
       if (!timeStr || typeof timeStr !== 'string') return null;
-      const timeMatch = timeStr.match(/(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?\s*(am|pm)?/i);
-      if (!timeMatch) return null;
+      const match = timeStr.match(/(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
+      if (!match) return null;
 
-      let h = parseInt(timeMatch[1], 10);
-      const m = parseInt(timeMatch[2], 10);
-      const s = timeMatch[3] ? parseInt(timeMatch[3], 10) : 0;
-      const ampm = timeMatch[4] ? timeMatch[4].toLowerCase() : null;
+      let h = parseInt(match[1], 10);
+      const m = parseInt(match[2], 10);
+      const s = match[3] ? parseInt(match[3], 10) : 0;
+      const lowerStr = timeStr.toLowerCase();
 
-      if (ampm === 'pm' && h < 12) h += 12;
-      if (ampm === 'am' && h === 12) h = 0;
+      if (lowerStr.includes('pm') && h < 12) h += 12;
+      if (lowerStr.includes('am') && h === 12) h = 0;
       return (h * 3600) + (m * 60) + s;
     };
 
     const monthStats = users.map(user => {
-      // പ്രസന്റ് അല്ലെങ്കിൽ ലേറ്റ് ആയ റെക്കോർഡുകൾ മാത്രം എടുക്കുന്നു
       const userRecords = records.filter(r => r.uid === user.uid && r.date.startsWith(currentMonth) && (r.status === 'present' || r.status === 'late'));
       
       let totalWorkingSeconds = 0;
@@ -71,17 +73,21 @@ export default function AdminDashboard() {
 
       userRecords.forEach(r => {
         const inSec = parseTime(r.checkIn);
-        const outSec = parseTime(r.checkOut);
+        let outSec = parseTime(r.checkOut);
 
-        // പഞ്ച് ഇൻ, പഞ്ച് ഔട്ട് സമയം കൃത്യമായി ഉണ്ടെങ്കിൽ മാത്രം കാൽക്കുലേറ്റ് ചെയ്യും
-        if (inSec !== null && outSec !== null) {
+        // LIVE TRACKING: ഇന്ന് വർക്കിങ് ആണെങ്കിൽ ഇതുവരെയുള്ള സമയം എടുക്കും!
+        if (r.checkOut === 'Working...' && r.date === todayDateStr) {
+          outSec = currentSecs;
+        }
+
+        if (inSec !== null && outSec !== null && !isNaN(inSec) && !isNaN(outSec)) {
           let diff = outSec - inSec;
-          if (diff < 0) diff += 24 * 3600; // നൈറ്റ് ഷിഫ്റ്റ് വന്നാൽ ഉപയോഗിക്കാൻ
+          if (diff < 0) diff += 24 * 3600; 
           totalWorkingSeconds += diff;
         }
       });
       
-      // മൊത്തം സെക്കൻഡിനെ മണിക്കൂറും മിനിറ്റും ആക്കുന്നു
+      // സമയം മണിക്കൂറിലേക്കും മിനിറ്റിലേക്കും മാറ്റുന്നു
       const totalHours = Math.floor(totalWorkingSeconds / 3600);
       const totalMinutes = Math.floor((totalWorkingSeconds % 3600) / 60);
       const workTimeStr = `${totalHours}h ${totalMinutes}m`;
@@ -95,7 +101,7 @@ export default function AdminDashboard() {
       };
     });
 
-    // ഏറ്റവും കൂടുതൽ സമയം വർക്ക് ചെയ്തവർ ആദ്യം വരും!
+    // ഏറ്റവും കൂടുതൽ സമയം വർക്ക് ചെയ്തവർ ആദ്യം വരും
     return monthStats.sort((a, b) => b.totalWorkingSeconds - a.totalWorkingSeconds).slice(0, 3);
   }, [records, users, filters.month]);
 
@@ -257,7 +263,6 @@ export default function AdminDashboard() {
                 </div>
                 <div className="flex flex-col items-end">
                   <div className="flex items-center gap-1">
-                    {/* കറക്റ്റ് ടോട്ടൽ വർക്കിങ് ടൈം കാണിക്കുന്നു */}
                     <span className="text-xs font-bold text-emerald-400">{staff.workTimeStr}</span>
                     {index === 0 && <Award size={16} className="text-yellow-400" />}
                   </div>
@@ -265,7 +270,7 @@ export default function AdminDashboard() {
                 </div>
               </div>
             ))}
-            {leaderboard.length === 0 && <p className="text-sm text-text-muted text-center pt-4">No completed shifts yet.</p>}
+            {leaderboard.length === 0 && <p className="text-sm text-text-muted text-center pt-4">No data this month yet.</p>}
           </div>
         </motion.div>
 
