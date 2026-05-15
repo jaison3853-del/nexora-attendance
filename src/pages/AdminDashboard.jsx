@@ -42,15 +42,46 @@ export default function AdminDashboard() {
     return () => { unsubAttendance(); unsubLeaves(); };
   }, []);
 
-  // --- 1. LEADERBOARD LOGIC ---
+  // --- 1. SUPER SMART LEADERBOARD (Time-based Tie Breaker) ---
   const leaderboard = useMemo(() => {
     const currentMonth = filters.month || format(new Date(), 'yyyy-MM');
+    
     const monthStats = users.map(user => {
-      const userRecords = records.filter(r => r.uid === user.uid && r.date.startsWith(currentMonth));
-      const onTimeCount = userRecords.filter(r => r.status === 'present').length;
-      return { name: user.name, onTime: onTimeCount, uid: user.uid };
+      const userRecords = records.filter(r => r.uid === user.uid && r.date.startsWith(currentMonth) && r.status === 'present');
+      const onTimeCount = userRecords.length;
+
+      // Average Punch-in Time കണ്ടുപിടിക്കാൻ
+      let totalSeconds = 0;
+      userRecords.forEach(r => {
+        if (r.checkIn && r.checkIn !== '--:--' && r.checkIn !== 'ON LEAVE') {
+          const [hours, minutes, seconds] = r.checkIn.split(':').map(Number);
+          const sec = seconds || 0;
+          totalSeconds += (hours * 3600) + (minutes * 60) + sec;
+        }
+      });
+      
+      const avgSeconds = onTimeCount > 0 ? Math.floor(totalSeconds / onTimeCount) : Infinity;
+      
+      // സമയം AM/PM ഫോർമാറ്റിലേക്ക് മാറ്റുന്നു
+      let avgTimeStr = '--:--';
+      if (avgSeconds !== Infinity) {
+        const h = Math.floor(avgSeconds / 3600);
+        const m = Math.floor((avgSeconds % 3600) / 60);
+        const ampm = h >= 12 ? 'PM' : 'AM';
+        const h12 = h % 12 || 12;
+        avgTimeStr = `${h12.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${ampm}`;
+      }
+
+      return { name: user.name, onTime: onTimeCount, uid: user.uid, avgSeconds, avgTimeStr };
     });
-    return monthStats.sort((a, b) => b.onTime - a.onTime).slice(0, 3);
+
+    // Ranking Logic: ആദ്യം ദിവസം നോക്കും, ഒരേ ദിവസമാണെങ്കിൽ സമയം നോക്കും (Earliest time wins!)
+    return monthStats.sort((a, b) => {
+      if (b.onTime !== a.onTime) {
+        return b.onTime - a.onTime; // കൂടുതൽ Present ആയവർ ആദ്യം
+      }
+      return a.avgSeconds - b.avgSeconds; // സമയം കുറഞ്ഞവർ (നേരത്തെ വന്നവർ) ആദ്യം
+    }).slice(0, 3);
   }, [records, users, filters.month]);
 
   // --- 2. SMART COMBINED RECORDS (11 AM Cutoff + 9 PM Auto-Miss) ---
@@ -67,7 +98,6 @@ export default function AdminDashboard() {
 
     const leaveEntries = [];
 
-    // 11 AM Cutoff Logic for Leaves (Sunday ഒഴിവാക്കി)
     if (filters.date && selectedDate.getDay() !== 0) {
       users.forEach(user => {
         const punchRecord = currentRecords.find(r => r.uid === user.uid);
@@ -88,10 +118,8 @@ export default function AdminDashboard() {
 
     const combined = [...currentRecords, ...leaveEntries];
 
-    // Search Filter & 9 PM Auto-Miss Logic
     return combined.filter(r => r.name?.toLowerCase().includes(filters.search.toLowerCase()))
       .map(record => {
-        // ഇന്നും ഇന്നലെയും ഒക്കെ 'Working...' എന്ന് കിടപ്പുണ്ടെങ്കിൽ Auto-Miss ആക്കും
         const isPastDay = record.date !== format(now, 'yyyy-MM-dd');
         if (record.checkOut === 'Working...' && (isPast9PM || isPastDay)) {
           return { ...record, status: 'Forgot Out', checkOut: 'AUTO-MISS' };
@@ -100,7 +128,6 @@ export default function AdminDashboard() {
       });
   }, [records, leaves, users, filters]);
 
-  // --- 3. EXPECTED LEAVES (Amber Alert Card) ---
   const todaysApprovedLeaves = useMemo(() => {
     if (!filters.date) return [];
     const selectedDate = startOfDay(parseISO(filters.date));
@@ -111,7 +138,6 @@ export default function AdminDashboard() {
     });
   }, [leaves, users, records, filters.date]);
 
-  // --- 4. MONTHLY CALENDAR GRID LOGIC ---
   const getFullMonthReport = (staffId, selectedMonth) => {
     if (!staffId || !selectedMonth) return [];
     const [year, month] = selectedMonth.split('-');
@@ -136,7 +162,6 @@ export default function AdminDashboard() {
     return report;
   };
 
-  // --- 5. EXPORT & EMAIL LOGIC ---
   const exportMonthlySummary = () => {
     const currentMonth = filters.month || format(new Date(), 'yyyy-MM');
     const reportData = records.filter(r => r.date?.startsWith(currentMonth));
@@ -160,7 +185,6 @@ export default function AdminDashboard() {
     } catch (e) { toast.error('Error updating status'); }
   };
 
-  // --- CHARTS DATA ---
   const chartData = useMemo(() => {
     const last7Days = [...Array(7)].map((_, i) => format(subDays(new Date(), i), 'yyyy-MM-dd')).reverse();
     const trend = last7Days.map(date => ({ name: format(new Date(date), 'EEE'), present: records.filter(r => r.date === date).length }));
@@ -178,7 +202,6 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-10 px-4">
-      {/* 1. Header Area */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-display font-bold text-text-bright">Nexora Control Center</h1>
@@ -189,14 +212,11 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      {/* 2. Top Analytics Grid (Charts & Leaderboard) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Weekly Trend */}
         <div className="lg:col-span-2 glass rounded-3xl p-6 border border-white/5 h-[320px]">
           <h3 className="text-lg font-bold text-text-bright mb-6 flex items-center gap-2"><TrendingUp size={20} className="text-cyan-400" /> Weekly Presence</h3>
           <ResponsiveContainer width="100%" height="100%"><BarChart data={chartData.trend}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} /><XAxis dataKey="name" stroke="#94a3b8" fontSize={12} /><YAxis stroke="#94a3b8" fontSize={12} /><Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px' }} /><Bar dataKey="present" fill="#22d3ee" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer>
         </div>
-        {/* Today's Summary */}
         <div className="glass rounded-3xl p-6 border border-white/5 h-[320px] flex flex-col">
           <h3 className="text-lg font-bold text-text-bright mb-2 text-center">Today's Summary</h3>
           <div className="flex-1 w-full relative">
@@ -206,26 +226,32 @@ export default function AdminDashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Punctuality Leaderboard */}
+        {/* --- SMART LEADERBOARD UI --- */}
         <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="lg:col-span-1 glass rounded-3xl p-6 border border-yellow-500/20 bg-yellow-500/5">
           <h3 className="text-lg font-bold text-text-bright mb-4 flex items-center gap-2"><Trophy className="text-yellow-400" size={20} /> Top Performers</h3>
+          <p className="text-[10px] text-text-muted mb-4 leading-tight">Ranked by Present Days. Ties are broken by the earliest average punch-in time.</p>
           <div className="space-y-3">
             {leaderboard.map((staff, index) => (
               <div key={staff.uid} className="flex items-center justify-between bg-white/5 p-3 rounded-2xl border border-white/5">
                 <div className="flex items-center gap-3">
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${index === 0 ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/20' : 'bg-white/10'}`}>{index + 1}</div>
-                  <span className="font-bold text-sm text-text-bright truncate max-w-[120px]">{staff.name}</span>
+                  <span className="font-bold text-sm text-text-bright truncate max-w-[100px]">{staff.name}</span>
                 </div>
-                <div className="flex items-center gap-1"><span className="text-xs font-mono text-text-muted">{staff.onTime}D</span>{index === 0 && <Award size={16} className="text-yellow-400" />}</div>
+                <div className="flex flex-col items-end">
+                  <div className="flex items-center gap-1">
+                    <span className="text-xs font-mono text-text-bright">{staff.onTime} Days</span>
+                    {index === 0 && <Award size={16} className="text-yellow-400" />}
+                  </div>
+                  {/* ശരാശരി സമയം ഇവിടെ കാണിക്കും */}
+                  {staff.onTime > 0 && <span className="text-[9px] text-emerald-400 mt-0.5">Avg: {staff.avgTimeStr}</span>}
+                </div>
               </div>
             ))}
             {leaderboard.length === 0 && <p className="text-sm text-text-muted text-center pt-4">No data this month yet.</p>}
           </div>
         </motion.div>
 
-        {/* Expected Leaves & Actionable Leaves Area */}
         <div className="lg:col-span-2 space-y-4">
-          {/* AUTO-MISS Alert */}
           {finalRecords.some(r => r.checkOut === 'AUTO-MISS') && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-2xl flex items-center gap-3">
               <AlertCircle className="text-rose-400" size={20} />
@@ -233,7 +259,6 @@ export default function AdminDashboard() {
             </motion.div>
           )}
 
-          {/* Expected Leaves Info */}
           {todaysApprovedLeaves.length > 0 && filters.date === format(new Date(), 'yyyy-MM-dd') && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-2xl flex items-center gap-4">
               <PlaneTakeoff className="text-amber-400" size={20} />
@@ -246,7 +271,6 @@ export default function AdminDashboard() {
             </motion.div>
           )}
 
-          {/* Actionable Leaves */}
           {leaves.filter(l => l.status === 'pending').length > 0 && (
             <div className="glass rounded-3xl p-5 border border-amber-500/20 bg-amber-500/5">
               <h3 className="text-lg font-bold text-text-bright mb-3 flex items-center gap-2"><FileText size={18} className="text-amber-400" /> Pending Leaves</h3>
@@ -266,7 +290,6 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* 3. Monthly Calendar Section */}
       {selectedStaffForReport && (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-3xl p-6 border border-violet-500/20 bg-violet-500/5">
           <h3 className="text-lg font-bold text-text-bright mb-4 flex items-center gap-2"><Calendar size={20} className="text-violet-400" /> Calendar Summary: {selectedStaffForReport.name}</h3>
@@ -285,7 +308,6 @@ export default function AdminDashboard() {
         </motion.div>
       )}
 
-      {/* 4. Filters & Main Table */}
       <div className="glass rounded-3xl p-6 border border-white/5">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" size={18} /><input type="text" placeholder="Search staff name..." className="input-field pl-10 w-full outline-none" value={filters.search} onChange={(e) => setFilters({...filters, search: e.target.value})} /></div>
