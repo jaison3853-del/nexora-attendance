@@ -42,11 +42,11 @@ export default function AdminDashboard() {
     return () => { unsubAttendance(); unsubLeaves(); };
   }, []);
 
-  // ഡാറ്റാബേസിൽ ഫീൽഡ് പേര് എന്തായാലും കണ്ടുപിടിക്കാനുള്ള സ്മാർട്ട് ലോജിക്
-  const getInTime = (r) => r?.checkIn || r?.punchIn || r?.inTime || null;
-  const getOutTime = (r) => r?.checkOut || r?.punchOut || r?.outTime || null;
+  // ഫയർബേസിൽ പേര് എന്തായാലും കറക്റ്റ് ആയി കണ്ടുപിടിക്കാനുള്ള സ്മാർട്ട് ലോജിക്
+  const getInTime = (r) => r?.timeIn || r?.checkIn || r?.punchIn || r?.inTime || null;
+  const getOutTime = (r) => r?.timeOut || r?.checkOut || r?.punchOut || r?.outTime || null;
 
-  // --- 1. SUPER SMART LEADERBOARD (Bulletproof Live Time Extractor) ---
+  // --- 1. SUPER SMART LEADERBOARD (Database Time Extractor Fix) ---
   const leaderboard = useMemo(() => {
     const currentMonth = filters.month || format(new Date(), 'yyyy-MM');
     const now = new Date();
@@ -112,7 +112,7 @@ export default function AdminDashboard() {
     return monthStats.sort((a, b) => b.totalWorkingSeconds - a.totalWorkingSeconds).slice(0, 3);
   }, [records, users, filters.month]);
 
-  // --- 2. SMART COMBINED RECORDS (11 AM Cutoff + 9 PM Auto-Miss) ---
+  // --- 2. SMART COMBINED RECORDS (Table Normalizer & Auto-Miss) ---
   const finalRecords = useMemo(() => {
     let currentRecords = records;
     if (filters.date) currentRecords = records.filter(r => r.date === filters.date);
@@ -137,7 +137,7 @@ export default function AdminDashboard() {
           if (activeLeave) {
             leaveEntries.push({
               id: `leave-${user.uid}`, uid: user.uid, name: user.name, date: filters.date,
-              status: 'leave', checkIn: 'ON LEAVE', checkOut: activeLeave.type, location: 'Approved Leave'
+              status: 'leave', timeIn: 'ON LEAVE', checkIn: 'ON LEAVE', timeOut: activeLeave.type, checkOut: activeLeave.type, location: 'Approved Leave'
             });
           }
         }
@@ -148,16 +148,29 @@ export default function AdminDashboard() {
 
     return combined.filter(r => r.name?.toLowerCase().includes(filters.search.toLowerCase()))
       .map(record => {
+        const inVal = getInTime(record);
         const outVal = getOutTime(record);
         const isPastDay = record.date !== format(now, 'yyyy-MM-dd');
+        
+        let newStatus = record.status;
+        let newOutVal = outVal;
+
         if ((outVal === 'Working...' || !outVal) && (isPast9PM || isPastDay)) {
-          return { ...record, status: 'Forgot Out', checkOut: 'AUTO-MISS', punchOut: 'AUTO-MISS' };
+          newStatus = 'Forgot Out';
+          newOutVal = 'AUTO-MISS';
         }
-        return record;
+
+        // AttendanceTable-ന് ഏത് പേരിൽ ഡാറ്റ ചോദിച്ചാലും കൊടുക്കാൻ പാകത്തിൽ മാറ്റുന്നു
+        return { 
+          ...record, 
+          status: newStatus, 
+          timeIn: inVal, checkIn: inVal, punchIn: inVal,
+          timeOut: newOutVal, checkOut: newOutVal, punchOut: newOutVal 
+        };
       });
   }, [records, leaves, users, filters]);
 
-  // --- 3. EXPECTED LEAVES (Amber Alert Card) ---
+  // --- 3. EXPECTED LEAVES ---
   const todaysApprovedLeaves = useMemo(() => {
     if (!filters.date) return [];
     const selectedDate = startOfDay(parseISO(filters.date));
