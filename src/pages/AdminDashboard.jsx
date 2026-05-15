@@ -42,53 +42,61 @@ export default function AdminDashboard() {
     return () => { unsubAttendance(); unsubLeaves(); };
   }, []);
 
-  // --- 1. SUPER SMART LEADERBOARD (Time-based Tie Breaker FIX) ---
+  // --- 1. SUPER SMART LEADERBOARD (Total Working Time Logic) ---
   const leaderboard = useMemo(() => {
     const currentMonth = filters.month || format(new Date(), 'yyyy-MM');
     
-    const monthStats = users.map(user => {
-      const userRecords = records.filter(r => r.uid === user.uid && r.date.startsWith(currentMonth) && r.status === 'present');
-      const onTimeCount = userRecords.length;
+    // സമയം സെക്കൻഡിലേക്ക് മാറ്റാനുള്ള ഫങ്ക്ഷൻ
+    const parseTime = (timeStr) => {
+      if (!timeStr || typeof timeStr !== 'string') return null;
+      const timeMatch = timeStr.match(/(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?\s*(am|pm)?/i);
+      if (!timeMatch) return null;
 
-      let totalSeconds = 0;
-      let validPunchCount = 0; 
+      let h = parseInt(timeMatch[1], 10);
+      const m = parseInt(timeMatch[2], 10);
+      const s = timeMatch[3] ? parseInt(timeMatch[3], 10) : 0;
+      const ampm = timeMatch[4] ? timeMatch[4].toLowerCase() : null;
+
+      if (ampm === 'pm' && h < 12) h += 12;
+      if (ampm === 'am' && h === 12) h = 0;
+      return (h * 3600) + (m * 60) + s;
+    };
+
+    const monthStats = users.map(user => {
+      // പ്രസന്റ് അല്ലെങ്കിൽ ലേറ്റ് ആയ റെക്കോർഡുകൾ മാത്രം എടുക്കുന്നു
+      const userRecords = records.filter(r => r.uid === user.uid && r.date.startsWith(currentMonth) && (r.status === 'present' || r.status === 'late'));
+      
+      let totalWorkingSeconds = 0;
+      let presentDays = userRecords.length;
 
       userRecords.forEach(r => {
-        if (r.checkIn && typeof r.checkIn === 'string' && r.checkIn.includes(':')) {
-          const timeString = r.checkIn.trim().toLowerCase();
-          const timeParts = timeString.split(' ')[0].split(':');
-          let h = parseInt(timeParts[0], 10);
-          const m = parseInt(timeParts[1], 10);
-          const s = timeParts[2] ? parseInt(timeParts[2], 10) : 0;
+        const inSec = parseTime(r.checkIn);
+        const outSec = parseTime(r.checkOut);
 
-          if (!isNaN(h) && !isNaN(m)) {
-            if (timeString.includes('pm') && h < 12) h += 12;
-            if (timeString.includes('am') && h === 12) h = 0;
-            
-            totalSeconds += (h * 3600) + (m * 60) + s;
-            validPunchCount++; 
-          }
+        // പഞ്ച് ഇൻ, പഞ്ച് ഔട്ട് സമയം കൃത്യമായി ഉണ്ടെങ്കിൽ മാത്രം കാൽക്കുലേറ്റ് ചെയ്യും
+        if (inSec !== null && outSec !== null) {
+          let diff = outSec - inSec;
+          if (diff < 0) diff += 24 * 3600; // നൈറ്റ് ഷിഫ്റ്റ് വന്നാൽ ഉപയോഗിക്കാൻ
+          totalWorkingSeconds += diff;
         }
       });
       
-      const avgSeconds = validPunchCount > 0 ? Math.floor(totalSeconds / validPunchCount) : Infinity;
-      
-      let avgTimeStr = '--:--';
-      if (avgSeconds !== Infinity) {
-        const h = Math.floor(avgSeconds / 3600);
-        const m = Math.floor((avgSeconds % 3600) / 60);
-        const ampm = h >= 12 ? 'PM' : 'AM';
-        const h12 = h % 12 || 12;
-        avgTimeStr = `${h12.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')} ${ampm}`;
-      }
+      // മൊത്തം സെക്കൻഡിനെ മണിക്കൂറും മിനിറ്റും ആക്കുന്നു
+      const totalHours = Math.floor(totalWorkingSeconds / 3600);
+      const totalMinutes = Math.floor((totalWorkingSeconds % 3600) / 60);
+      const workTimeStr = `${totalHours}h ${totalMinutes}m`;
 
-      return { name: user.name, onTime: onTimeCount, uid: user.uid, avgSeconds, avgTimeStr };
+      return { 
+        name: user.name, 
+        uid: user.uid, 
+        totalWorkingSeconds, 
+        workTimeStr,
+        presentDays
+      };
     });
 
-    return monthStats.sort((a, b) => {
-      if (b.onTime !== a.onTime) return b.onTime - a.onTime;
-      return a.avgSeconds - b.avgSeconds;
-    }).slice(0, 3);
+    // ഏറ്റവും കൂടുതൽ സമയം വർക്ക് ചെയ്തവർ ആദ്യം വരും!
+    return monthStats.sort((a, b) => b.totalWorkingSeconds - a.totalWorkingSeconds).slice(0, 3);
   }, [records, users, filters.month]);
 
   // --- 2. SMART COMBINED RECORDS (11 AM Cutoff + 9 PM Auto-Miss) ---
@@ -195,7 +203,6 @@ export default function AdminDashboard() {
     } catch (e) { toast.error('Error updating status'); }
   };
 
-  // --- CHARTS DATA ---
   const chartData = useMemo(() => {
     const last7Days = [...Array(7)].map((_, i) => format(subDays(new Date(), i), 'yyyy-MM-dd')).reverse();
     const trend = last7Days.map(date => ({ name: format(new Date(date), 'EEE'), present: records.filter(r => r.date === date).length }));
@@ -213,7 +220,6 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-10 px-4">
-      {/* 1. Header Area */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-display font-bold text-text-bright">Nexora Control Center</h1>
@@ -224,7 +230,6 @@ export default function AdminDashboard() {
         </button>
       </div>
 
-      {/* 2. Top Analytics Grid (Charts) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 glass rounded-3xl p-6 border border-white/5 h-[320px]">
           <h3 className="text-lg font-bold text-text-bright mb-6 flex items-center gap-2"><TrendingUp size={20} className="text-cyan-400" /> Weekly Presence</h3>
@@ -239,10 +244,10 @@ export default function AdminDashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Punctuality Leaderboard */}
+        {/* --- SMART LEADERBOARD UI --- */}
         <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="lg:col-span-1 glass rounded-3xl p-6 border border-yellow-500/20 bg-yellow-500/5">
           <h3 className="text-lg font-bold text-text-bright mb-4 flex items-center gap-2"><Trophy className="text-yellow-400" size={20} /> Top Performers</h3>
-          <p className="text-[10px] text-text-muted mb-4 leading-tight">Ranked by Present Days. Ties are broken by the earliest average punch-in time.</p>
+          <p className="text-[10px] text-text-muted mb-4 leading-tight">Ranked by Total Working Hours this month.</p>
           <div className="space-y-3">
             {leaderboard.map((staff, index) => (
               <div key={staff.uid} className="flex items-center justify-between bg-white/5 p-3 rounded-2xl border border-white/5">
@@ -252,18 +257,18 @@ export default function AdminDashboard() {
                 </div>
                 <div className="flex flex-col items-end">
                   <div className="flex items-center gap-1">
-                    <span className="text-xs font-mono text-text-bright">{staff.onTime} Days</span>
+                    {/* കറക്റ്റ് ടോട്ടൽ വർക്കിങ് ടൈം കാണിക്കുന്നു */}
+                    <span className="text-xs font-bold text-emerald-400">{staff.workTimeStr}</span>
                     {index === 0 && <Award size={16} className="text-yellow-400" />}
                   </div>
-                  {staff.onTime > 0 && <span className="text-[9px] text-emerald-400 mt-0.5">Avg: {staff.avgTimeStr}</span>}
+                  <span className="text-[9px] text-text-muted mt-0.5">{staff.presentDays} Days Present</span>
                 </div>
               </div>
             ))}
-            {leaderboard.length === 0 && <p className="text-sm text-text-muted text-center pt-4">No data this month yet.</p>}
+            {leaderboard.length === 0 && <p className="text-sm text-text-muted text-center pt-4">No completed shifts yet.</p>}
           </div>
         </motion.div>
 
-        {/* Expected Leaves & Actionable Leaves Area */}
         <div className="lg:col-span-2 space-y-4">
           {finalRecords.some(r => r.checkOut === 'AUTO-MISS') && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-2xl flex items-center gap-3">
@@ -303,7 +308,6 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* 3. Monthly Calendar Section */}
       {selectedStaffForReport && (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-3xl p-6 border border-violet-500/20 bg-violet-500/5">
           <h3 className="text-lg font-bold text-text-bright mb-4 flex items-center gap-2"><Calendar size={20} className="text-violet-400" /> Calendar Summary: {selectedStaffForReport.name}</h3>
@@ -322,7 +326,6 @@ export default function AdminDashboard() {
         </motion.div>
       )}
 
-      {/* 4. Filters & Main Table */}
       <div className="glass rounded-3xl p-6 border border-white/5">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" size={18} /><input type="text" placeholder="Search staff name..." className="input-field pl-10 w-full outline-none" value={filters.search} onChange={(e) => setFilters({...filters, search: e.target.value})} /></div>
