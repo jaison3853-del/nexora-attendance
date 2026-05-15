@@ -42,17 +42,17 @@ export default function AdminDashboard() {
     return () => { unsubAttendance(); unsubLeaves(); };
   }, []);
 
-  // ഫയർബേസിൽ പേര് എന്തായാലും കറക്റ്റ് ആയി കണ്ടുപിടിക്കാനുള്ള സ്മാർട്ട് ലോജിക്
   const getInTime = (r) => r?.timeIn || r?.checkIn || r?.punchIn || r?.inTime || null;
   const getOutTime = (r) => r?.timeOut || r?.checkOut || r?.punchOut || r?.outTime || null;
 
-  // --- 1. SUPER SMART LEADERBOARD (Database Time Extractor Fix) ---
+  // --- 1. SUPER SMART LEADERBOARD (Bulletproof Time Fix) ---
   const leaderboard = useMemo(() => {
     const currentMonth = filters.month || format(new Date(), 'yyyy-MM');
     const now = new Date();
     const todayDateStr = format(now, 'yyyy-MM-dd');
     const currentSecs = (now.getHours() * 3600) + (now.getMinutes() * 60) + now.getSeconds();
     
+    // ഏറ്റവും സ്ട്രിക്റ്റ് ആയ ടൈം എക്സ്ട്രാക്റ്റർ (ഇനി അബദ്ധം പറ്റില്ല!)
     const parseTime = (val) => {
       if (!val) return null;
       if (val.toDate) {
@@ -60,14 +60,17 @@ export default function AdminDashboard() {
         return (d.getHours() * 3600) + (d.getMinutes() * 60) + d.getSeconds();
       }
       if (typeof val === 'string') {
-        const nums = val.match(/\d+/g);
-        if (!nums || nums.length < 2) return null;
-        let h = parseInt(nums[0], 10);
-        let m = parseInt(nums[1], 10);
-        let s = nums.length > 2 ? parseInt(nums[2], 10) : 0;
-        const lower = val.toLowerCase();
-        if (lower.includes('pm') && h < 12) h += 12;
-        if (lower.includes('am') && h === 12) h = 0;
+        // HH:MM അല്ലെങ്കിൽ HH:MM:SS ഫോർമാറ്റ് മാത്രം കൃത്യമായി എടുക്കും
+        const timeMatch = val.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?/i);
+        if (!timeMatch) return null;
+        
+        let h = parseInt(timeMatch[1], 10);
+        let m = parseInt(timeMatch[2], 10);
+        let s = timeMatch[3] ? parseInt(timeMatch[3], 10) : 0;
+        const ampm = timeMatch[4] ? timeMatch[4].toLowerCase() : null;
+
+        if (ampm === 'pm' && h < 12) h += 12;
+        if (ampm === 'am' && h === 12) h = 0;
         return (h * 3600) + (m * 60) + s;
       }
       return null;
@@ -90,7 +93,7 @@ export default function AdminDashboard() {
         const inSec = parseTime(inVal);
         let outSec = parseTime(outVal);
 
-        // LIVE TRACKING: Working... സ്റ്റാറ്റസ് ആണെങ്കിൽ ഇപ്പോഴത്തെ സമയം എടുക്കും
+        // LIVE TRACKING: Working... ആണെങ്കിൽ ഇപ്പോഴത്തെ സമയം വെച്ച് കണക്കാക്കും
         if ((outVal === 'Working...' || !outVal) && r.date === todayDateStr) {
           outSec = currentSecs;
         }
@@ -112,7 +115,7 @@ export default function AdminDashboard() {
     return monthStats.sort((a, b) => b.totalWorkingSeconds - a.totalWorkingSeconds).slice(0, 3);
   }, [records, users, filters.month]);
 
-  // --- 2. SMART COMBINED RECORDS (Table Normalizer & Auto-Miss) ---
+  // --- 2. SMART COMBINED RECORDS ---
   const finalRecords = useMemo(() => {
     let currentRecords = records;
     if (filters.date) currentRecords = records.filter(r => r.date === filters.date);
@@ -160,7 +163,6 @@ export default function AdminDashboard() {
           newOutVal = 'AUTO-MISS';
         }
 
-        // AttendanceTable-ന് ഏത് പേരിൽ ഡാറ്റ ചോദിച്ചാലും കൊടുക്കാൻ പാകത്തിൽ മാറ്റുന്നു
         return { 
           ...record, 
           status: newStatus, 
