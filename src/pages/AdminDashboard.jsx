@@ -42,80 +42,73 @@ export default function AdminDashboard() {
     return () => { unsubAttendance(); unsubLeaves(); };
   }, []);
 
-  const getInTime = (r) => r?.timeIn || r?.checkIn || r?.punchIn || r?.inTime || null;
-  const getOutTime = (r) => r?.timeOut || r?.checkOut || r?.punchOut || r?.outTime || null;
-
-  // --- 1. SUPER SMART LEADERBOARD (Bulletproof Time Fix) ---
+  // --- 1. SUPER SMART LEADERBOARD (Bulletproof Live Time + 6PM Fallback) ---
   const leaderboard = useMemo(() => {
     const currentMonth = filters.month || format(new Date(), 'yyyy-MM');
     const now = new Date();
     const todayDateStr = format(now, 'yyyy-MM-dd');
-    const currentSecs = (now.getHours() * 3600) + (now.getMinutes() * 60) + now.getSeconds();
-    
-    // ഏറ്റവും സ്ട്രിക്റ്റ് ആയ ടൈം എക്സ്ട്രാക്റ്റർ (ഇനി അബദ്ധം പറ്റില്ല!)
-    const parseTime = (val) => {
-      if (!val) return null;
-      if (val.toDate) {
-        const d = val.toDate();
-        return (d.getHours() * 3600) + (d.getMinutes() * 60) + d.getSeconds();
-      }
-      if (typeof val === 'string') {
-        // HH:MM അല്ലെങ്കിൽ HH:MM:SS ഫോർമാറ്റ് മാത്രം കൃത്യമായി എടുക്കും
-        const timeMatch = val.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?/i);
-        if (!timeMatch) return null;
-        
-        let h = parseInt(timeMatch[1], 10);
-        let m = parseInt(timeMatch[2], 10);
-        let s = timeMatch[3] ? parseInt(timeMatch[3], 10) : 0;
-        const ampm = timeMatch[4] ? timeMatch[4].toLowerCase() : null;
+    const currentSecs = (now.getHours() * 3600) + (now.getMinutes() * 60);
 
-        if (ampm === 'pm' && h < 12) h += 12;
-        if (ampm === 'am' && h === 12) h = 0;
-        return (h * 3600) + (m * 60) + s;
-      }
-      return null;
+    // സമയം വളരെ കൃത്യമായി വലിച്ചെടുക്കാനുള്ള ഫങ്ക്ഷൻ
+    const parseTime = (timeStr) => {
+      if (!timeStr) return null;
+      const str = String(timeStr).toLowerCase();
+      const match = str.match(/(\d{1,2}):(\d{1,2})/); // മണിക്കൂറും മിനിറ്റും മാത്രം എടുക്കുന്നു
+      if (!match) return null;
+      
+      let h = parseInt(match[1], 10);
+      let m = parseInt(match[2], 10);
+      if (str.includes('pm') && h < 12) h += 12;
+      if (str.includes('am') && h === 12) h = 0;
+      return (h * 3600) + (m * 60);
     };
 
     const monthStats = users.map(user => {
       const userRecords = records.filter(r => 
         r.uid === user.uid && 
-        r.date?.startsWith(currentMonth) && 
-        (r.status?.toLowerCase() === 'present' || r.status?.toLowerCase() === 'late')
+        r.date?.startsWith(currentMonth)
       );
       
-      let totalWorkingSeconds = 0;
-      let presentDays = userRecords.length;
+      let totalSecs = 0;
+      let presentDays = 0;
 
       userRecords.forEach(r => {
-        const inVal = getInTime(r);
-        let outVal = getOutTime(r);
+        if (!r.checkIn || r.checkIn === '--:--' || r.checkIn === 'ON LEAVE') return;
+        
+        const inSec = parseTime(r.checkIn);
+        if (inSec === null) return;
+        
+        presentDays++;
+        let outSec = parseTime(r.checkOut);
+        
+        const isWorking = !r.checkOut || String(r.checkOut).toLowerCase().includes('work');
 
-        const inSec = parseTime(inVal);
-        let outSec = parseTime(outVal);
-
-        // LIVE TRACKING: Working... ആണെങ്കിൽ ഇപ്പോഴത്തെ സമയം വെച്ച് കണക്കാക്കും
-        if ((outVal === 'Working...' || !outVal) && r.date === todayDateStr) {
-          outSec = currentSecs;
+        if (isWorking) {
+          if (r.date === todayDateStr) {
+            outSec = currentSecs; // ഇന്ന് ലൈവ് ആയി വർക്ക് ചെയ്യുന്നു
+          } else {
+            outSec = 18 * 3600; // പഴയ ദിവസങ്ങളിൽ പഞ്ച് ഔട്ട് മറന്നാൽ 6:00 PM എന്ന് കാൽക്കുലേറ്റ് ചെയ്യും!
+          }
         }
 
-        if (inSec !== null && outSec !== null && !isNaN(inSec) && !isNaN(outSec)) {
+        if (outSec !== null) {
           let diff = outSec - inSec;
           if (diff < 0) diff += 24 * 3600; 
-          totalWorkingSeconds += diff;
+          totalSecs += diff;
         }
       });
       
-      const totalHours = Math.floor(totalWorkingSeconds / 3600);
-      const totalMinutes = Math.floor((totalWorkingSeconds % 3600) / 60);
+      const totalHours = Math.floor(totalSecs / 3600);
+      const totalMinutes = Math.floor((totalSecs % 3600) / 60);
       const workTimeStr = `${totalHours}h ${totalMinutes}m`;
 
-      return { name: user.name, uid: user.uid, totalWorkingSeconds, workTimeStr, presentDays };
+      return { name: user.name, uid: user.uid, totalSecs, workTimeStr, presentDays };
     });
 
-    return monthStats.sort((a, b) => b.totalWorkingSeconds - a.totalWorkingSeconds).slice(0, 3);
+    return monthStats.sort((a, b) => b.totalSecs - a.totalSecs).slice(0, 3);
   }, [records, users, filters.month]);
 
-  // --- 2. SMART COMBINED RECORDS ---
+  // --- 2. SMART COMBINED RECORDS (Table Normalizer without breaking Status Color) ---
   const finalRecords = useMemo(() => {
     let currentRecords = records;
     if (filters.date) currentRecords = records.filter(r => r.date === filters.date);
@@ -140,7 +133,7 @@ export default function AdminDashboard() {
           if (activeLeave) {
             leaveEntries.push({
               id: `leave-${user.uid}`, uid: user.uid, name: user.name, date: filters.date,
-              status: 'leave', timeIn: 'ON LEAVE', checkIn: 'ON LEAVE', timeOut: activeLeave.type, checkOut: activeLeave.type, location: 'Approved Leave'
+              status: 'leave', checkIn: 'ON LEAVE', checkOut: activeLeave.type, location: 'Approved Leave'
             });
           }
         }
@@ -151,24 +144,17 @@ export default function AdminDashboard() {
 
     return combined.filter(r => r.name?.toLowerCase().includes(filters.search.toLowerCase()))
       .map(record => {
-        const inVal = getInTime(record);
-        const outVal = getOutTime(record);
         const isPastDay = record.date !== format(now, 'yyyy-MM-dd');
+        const isWorking = !record.checkOut || String(record.checkOut).toLowerCase().includes('work');
         
-        let newStatus = record.status;
-        let newOutVal = outVal;
+        let newOutVal = record.checkOut;
 
-        if ((outVal === 'Working...' || !outVal) && (isPast9PM || isPastDay)) {
-          newStatus = 'Forgot Out';
-          newOutVal = 'AUTO-MISS';
+        // Auto-Miss Logic: സ്റ്റാറ്റസ് മാറ്റില്ല, പഞ്ച് ഔട്ട് കോളം മാത്രം മാറ്റും! (അപ്പോൾ നിറം പോകില്ല)
+        if (isWorking && (isPast9PM || isPastDay)) {
+          newOutVal = 'Forgot Out';
         }
 
-        return { 
-          ...record, 
-          status: newStatus, 
-          timeIn: inVal, checkIn: inVal, punchIn: inVal,
-          timeOut: newOutVal, checkOut: newOutVal, punchOut: newOutVal 
-        };
+        return { ...record, checkOut: newOutVal };
       });
   }, [records, leaves, users, filters]);
 
@@ -203,8 +189,7 @@ export default function AdminDashboard() {
       else if (isAfter(currentDate, today)) status = 'upcoming';
       else if (currentDate.getDay() === 0 && !record) status = 'holiday';
       
-      const inVal = record ? (getInTime(record) || '--:--') : '--:--';
-      report.push({ date: dateStr, status: status, checkIn: inVal });
+      report.push({ date: dateStr, status: status, checkIn: record ? record.checkIn : '--:--' });
     }
     return report;
   };
@@ -299,10 +284,10 @@ export default function AdminDashboard() {
         </motion.div>
 
         <div className="lg:col-span-2 space-y-4">
-          {finalRecords.some(r => r.checkOut === 'AUTO-MISS') && (
+          {finalRecords.some(r => r.checkOut === 'Forgot Out') && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-2xl flex items-center gap-3">
               <AlertCircle className="text-rose-400" size={20} />
-              <p className="text-sm text-rose-300 font-medium">System Alert: Some staff forgot to punch out. Marked as AUTO-MISS.</p>
+              <p className="text-sm text-rose-300 font-medium">System Alert: Some staff forgot to punch out. Marked as Forgot Out.</p>
             </motion.div>
           )}
 
