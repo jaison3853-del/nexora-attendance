@@ -42,25 +42,38 @@ export default function AdminDashboard() {
     return () => { unsubAttendance(); unsubLeaves(); };
   }, []);
 
-  // --- 1. SUPER SMART LEADERBOARD (Bulletproof Live Time + 6PM Fallback) ---
+  // ഡാറ്റാബേസിൽ ഫീൽഡ് പേര് എന്തായാലും കണ്ടുപിടിക്കാൻ (BUG FIXED HERE!)
+  const getInTime = (r) => r?.checkIn || r?.punchIn || r?.timeIn || r?.inTime || r?.createdAt || null;
+  const getOutTime = (r) => r?.checkOut || r?.punchOut || r?.timeOut || r?.outTime || null;
+
+  // --- 1. SUPER SMART LEADERBOARD (Now perfectly using getInTime) ---
   const leaderboard = useMemo(() => {
     const currentMonth = filters.month || format(new Date(), 'yyyy-MM');
     const now = new Date();
     const todayDateStr = format(now, 'yyyy-MM-dd');
     const currentSecs = (now.getHours() * 3600) + (now.getMinutes() * 60);
 
-    // സമയം വളരെ കൃത്യമായി വലിച്ചെടുക്കാനുള്ള ഫങ്ക്ഷൻ
-    const parseTime = (timeStr) => {
-      if (!timeStr) return null;
-      const str = String(timeStr).toLowerCase();
-      const match = str.match(/(\d{1,2}):(\d{1,2})/); // മണിക്കൂറും മിനിറ്റും മാത്രം എടുക്കുന്നു
-      if (!match) return null;
-      
-      let h = parseInt(match[1], 10);
-      let m = parseInt(match[2], 10);
-      if (str.includes('pm') && h < 12) h += 12;
-      if (str.includes('am') && h === 12) h = 0;
-      return (h * 3600) + (m * 60);
+    const parseTime = (val) => {
+      if (!val) return null;
+      try {
+        if (typeof val.toDate === 'function') {
+          const d = val.toDate();
+          return (d.getHours() * 3600) + (d.getMinutes() * 60);
+        }
+        if (val instanceof Date) {
+          return (val.getHours() * 3600) + (val.getMinutes() * 60);
+        }
+        const str = String(val).toLowerCase();
+        const match = str.match(/(\d{1,2}):(\d{1,2})/); 
+        if (match) {
+          let h = parseInt(match[1], 10);
+          let m = parseInt(match[2], 10);
+          if (str.includes('pm') && h < 12) h += 12;
+          if (str.includes('am') && h === 12) h = 0;
+          return (h * 3600) + (m * 60);
+        }
+      } catch(e) {}
+      return null;
     };
 
     const monthStats = users.map(user => {
@@ -73,21 +86,25 @@ export default function AdminDashboard() {
       let presentDays = 0;
 
       userRecords.forEach(r => {
-        if (!r.checkIn || r.checkIn === '--:--' || r.checkIn === 'ON LEAVE') return;
+        // ഇവിടെ ഞാൻ r.checkIn ന് പകരം getInTime(r) ഉപയോഗിച്ചു!
+        const inVal = getInTime(r);
         
-        const inSec = parseTime(r.checkIn);
+        if (!inVal || String(inVal).includes('--') || String(inVal).includes('LEAVE')) return;
+        
+        const inSec = parseTime(inVal);
         if (inSec === null) return;
         
         presentDays++;
-        let outSec = parseTime(r.checkOut);
         
-        const isWorking = !r.checkOut || String(r.checkOut).toLowerCase().includes('work');
+        const outVal = getOutTime(r);
+        let outSec = parseTime(outVal);
+        const isWorking = !outVal || String(outVal).toLowerCase().includes('work');
 
         if (isWorking) {
           if (r.date === todayDateStr) {
-            outSec = currentSecs; // ഇന്ന് ലൈവ് ആയി വർക്ക് ചെയ്യുന്നു
+            outSec = currentSecs; // ഇന്ന് വർക്കിങ് ആണെങ്കിൽ ലൈവ് സമയം
           } else {
-            outSec = 18 * 3600; // പഴയ ദിവസങ്ങളിൽ പഞ്ച് ഔട്ട് മറന്നാൽ 6:00 PM എന്ന് കാൽക്കുലേറ്റ് ചെയ്യും!
+            outSec = 18 * 3600; // പഴയ ഡേറ്റിൽ പഞ്ച് ഔട്ട് മറന്നാൽ 6:00 PM
           }
         }
 
@@ -108,7 +125,7 @@ export default function AdminDashboard() {
     return monthStats.sort((a, b) => b.totalSecs - a.totalSecs).slice(0, 3);
   }, [records, users, filters.month]);
 
-  // --- 2. SMART COMBINED RECORDS (Table Normalizer without breaking Status Color) ---
+  // --- 2. SMART COMBINED RECORDS (Table Normalizer & Auto-Miss) ---
   const finalRecords = useMemo(() => {
     let currentRecords = records;
     if (filters.date) currentRecords = records.filter(r => r.date === filters.date);
@@ -145,11 +162,11 @@ export default function AdminDashboard() {
     return combined.filter(r => r.name?.toLowerCase().includes(filters.search.toLowerCase()))
       .map(record => {
         const isPastDay = record.date !== format(now, 'yyyy-MM-dd');
-        const isWorking = !record.checkOut || String(record.checkOut).toLowerCase().includes('work');
+        const outVal = getOutTime(record);
+        const isWorking = !outVal || String(outVal).toLowerCase().includes('work');
         
-        let newOutVal = record.checkOut;
+        let newOutVal = outVal;
 
-        // Auto-Miss Logic: സ്റ്റാറ്റസ് മാറ്റില്ല, പഞ്ച് ഔട്ട് കോളം മാത്രം മാറ്റും! (അപ്പോൾ നിറം പോകില്ല)
         if (isWorking && (isPast9PM || isPastDay)) {
           newOutVal = 'Forgot Out';
         }
@@ -189,7 +206,17 @@ export default function AdminDashboard() {
       else if (isAfter(currentDate, today)) status = 'upcoming';
       else if (currentDate.getDay() === 0 && !record) status = 'holiday';
       
-      report.push({ date: dateStr, status: status, checkIn: record ? record.checkIn : '--:--' });
+      const inVal = record ? (getInTime(record) || '--:--') : '--:--';
+      
+      // കലണ്ടറിൽ കാണിക്കാൻ ഒബ്ജക്റ്റ് ആണെങ്കിൽ സ്ട്രിങ് ആക്കുന്നു
+      let displayIn = '--:--';
+      if (inVal && typeof inVal.toDate === 'function') {
+         displayIn = format(inVal.toDate(), 'HH:mm');
+      } else if (inVal) {
+         displayIn = String(inVal);
+      }
+
+      report.push({ date: dateStr, status: status, checkIn: displayIn });
     }
     return report;
   };
