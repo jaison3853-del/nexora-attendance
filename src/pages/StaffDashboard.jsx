@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  CheckCircle, XCircle, Clock, TrendingUp, Calendar, MapPin, Zap, FileText, Info, Trophy, Award
+  CheckCircle, XCircle, Clock, TrendingUp, Calendar, MapPin, Zap, FileText, Info, Trophy, Award, QrCode, RefreshCcw, IdCard
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -25,7 +25,7 @@ export default function StaffDashboard() {
   const [stats, setStats] = useState({ total: 0, present: 0, absent: 0, late: 0, percentage: 0 });
   const [loading, setLoading] = useState(true);
 
-  // Leaderboard-നു വേണ്ടിയുള്ള പുതിയ സ്റ്റേറ്റുകൾ
+  const [isIdFlipped, setIsIdFlipped] = useState(false);
   const [allRecords, setAllRecords] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
 
@@ -47,11 +47,9 @@ export default function StaffDashboard() {
 
     loadData();
 
-    // ലീഡർബോർഡിന് വേണ്ടി എല്ലാവരുടെയും ഡാറ്റ എടുക്കുന്നു
     getAllUsers().then(setAllUsers);
     const unsubAll = subscribeToAttendance((data) => setAllRecords(data));
 
-    // Leave status query
     const q = query(
       collection(db, 'leaves'), 
       where('userId', '==', user.uid)
@@ -71,9 +69,14 @@ export default function StaffDashboard() {
     };
   }, [user.uid, dateKey]);
 
-  // --- LEADERBOARD LOGIC (Admin Panel-ൽ ചെയ്ത അതേ സ്മാർട്ട് ലോജിക്) ---
+  // ലോഗിൻ ചെയ്ത ആളുടെ ലൈവ് ഡാറ്റ (ഐഡി കാർഡിന് വേണ്ടി)
+  const currentUserProfile = useMemo(() => {
+    return allUsers.find(u => u.uid === user.uid) || user;
+  }, [allUsers, user]);
+
+  // --- LEADERBOARD LOGIC (ഫോട്ടോയും ഡെസിഗ്നേഷനും കൂടെ വലിച്ചെടുക്കുന്നു) ---
   const leaderboard = useMemo(() => {
-    const currentMonth = dateKey.substring(0, 7); // ഉദാഹരണത്തിന്: "2026-05"
+    const currentMonth = dateKey.substring(0, 7); 
     const now = new Date();
     const todayDateStr = format(now, 'yyyy-MM-dd');
     const currentSecs = (now.getHours() * 3600) + (now.getMinutes() * 60);
@@ -139,7 +142,16 @@ export default function StaffDashboard() {
       const totalMinutes = Math.floor((totalSecs % 3600) / 60);
       const workTimeStr = `${totalHours}h ${totalMinutes}m`;
 
-      return { name: u.name, uid: u.uid, totalSecs, workTimeStr, presentDays };
+      // ഇവിടെ യൂസറിന്റെ ഫോട്ടോയും പോസ്റ്റും കൂടെ പാസ്സ് ചെയ്യുന്നു!
+      return { 
+        name: u.name, 
+        uid: u.uid, 
+        totalSecs, 
+        workTimeStr, 
+        presentDays,
+        photoURL: u.photoURL,
+        designation: u.designation
+      };
     });
 
     return monthStats.sort((a, b) => b.totalSecs - a.totalSecs).slice(0, 3);
@@ -161,7 +173,7 @@ export default function StaffDashboard() {
             <span className="text-xs text-cyan-400 font-mono uppercase tracking-widest">Staff Portal</span>
           </div>
           <h1 className="text-2xl font-display font-bold text-text-bright">
-            Hi, <span className="text-gradient-cyan">{user.name?.split(' ')[0]}</span>
+            Hi, <span className="text-gradient-cyan">{currentUserProfile.name?.split(' ')[0]}</span>
           </h1>
           <p className="text-sm text-text-muted mt-1 font-mono">{date}</p>
         </div>
@@ -178,8 +190,8 @@ export default function StaffDashboard() {
         <StatCard icon={XCircle} label="Absent" value={stats.absent} color="rose" />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Progress Bar */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        {/* Progress Bar (2 Columns) */}
         <div className="glass rounded-2xl p-5 md:col-span-2">
           <div className="flex items-center justify-between mb-3">
             <span className="text-sm font-semibold text-text-bright">Attendance Rate</span>
@@ -190,14 +202,80 @@ export default function StaffDashboard() {
           </div>
         </div>
 
-        {/* Quick Link */}
-        <Link to="/leave-request" className="glass rounded-2xl p-5 flex flex-col justify-center items-center gap-2 hover:bg-white/5 border border-violet-500/20 transition-all group">
+        {/* --- DIGITAL SMART ID CARD (1 Column) --- */}
+        <div className="md:col-span-1 relative h-[140px] md:h-auto">
+          <div 
+            className="glass w-full h-full rounded-2xl relative overflow-hidden cursor-pointer group shadow-xl border border-cyan-500/30" 
+            onClick={() => setIsIdFlipped(!isIdFlipped)}
+          >
+            <AnimatePresence mode="wait">
+              {!isIdFlipped ? (
+                // FRONT OF ID CARD
+                <motion.div 
+                  key="front" 
+                  initial={{ opacity: 0, rotateY: -90 }} 
+                  animate={{ opacity: 1, rotateY: 0 }} 
+                  exit={{ opacity: 0, rotateY: 90 }} 
+                  transition={{ duration: 0.3 }} 
+                  className="absolute inset-0 p-4 flex flex-col justify-between bg-gradient-to-br from-[#0f172a] via-[#1e293b] to-[#0f172a]"
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-2">
+                      <div className="w-5 h-5 bg-cyan-500 rounded flex items-center justify-center text-black font-bold text-[10px]">N</div>
+                      <span className="text-[10px] font-bold text-text-bright tracking-widest">NEXORA SM</span>
+                    </div>
+                    <RefreshCcw size={12} className="text-text-muted opacity-50 group-hover:opacity-100 transition-opacity" />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="w-14 h-14 rounded-full bg-gradient-to-tr from-cyan-500 to-violet-500 p-0.5 shadow-lg flex-shrink-0">
+                      <div className="w-full h-full bg-[#0f172a] rounded-full flex items-center justify-center font-bold text-xl text-white overflow-hidden border border-[#0f172a]">
+                        {currentUserProfile.photoURL ? (
+                          <img src={currentUserProfile.photoURL} alt="Profile" className="w-full h-full object-cover" />
+                        ) : (
+                          currentUserProfile.name?.charAt(0).toUpperCase()
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex-1 overflow-hidden">
+                      <h3 className="font-bold text-text-bright text-sm leading-tight truncate">{currentUserProfile.name}</h3>
+                      <p className="text-[10px] text-text-muted truncate mt-0.5">
+                        {currentUserProfile.designation || 'Nexora Team'}
+                      </p>
+                      <p className="text-[9px] text-cyan-400 font-mono mt-1 bg-cyan-500/10 inline-block px-2 py-0.5 rounded border border-cyan-500/20">
+                        EMP-{currentUserProfile.uid?.substring(0,5).toUpperCase()}
+                      </p>
+                    </div>
+                  </div>
+                </motion.div>
+              ) : (
+                // BACK OF ID CARD (QR CODE)
+                <motion.div 
+                  key="back" 
+                  initial={{ opacity: 0, rotateY: 90 }} 
+                  animate={{ opacity: 1, rotateY: 0 }} 
+                  exit={{ opacity: 0, rotateY: -90 }} 
+                  transition={{ duration: 0.3 }} 
+                  className="absolute inset-0 p-4 flex flex-col items-center justify-center bg-gradient-to-br from-[#020617] to-[#0f172a]"
+                >
+                  <div className="bg-white p-1.5 rounded-lg mb-2 shadow-[0_0_15px_rgba(34,211,238,0.3)]">
+                    <QrCode size={48} className="text-black" />
+                  </div>
+                  <p className="text-[9px] text-cyan-400 font-bold tracking-widest uppercase">Scan to Verify</p>
+                  <p className="text-[8px] text-text-muted/50 absolute bottom-2">Property of Nexora SM</p>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+
+        {/* Quick Link (1 Column) */}
+        <Link to="/leave-request" className="glass md:col-span-1 rounded-2xl p-5 flex flex-col justify-center items-center gap-2 hover:bg-white/5 border border-violet-500/20 transition-all group">
           <FileText className="text-violet-400" size={24} />
-          <span className="text-sm font-bold text-text-bright">Apply for Leave</span>
+          <span className="text-sm font-bold text-text-bright">Apply Leave</span>
         </Link>
       </div>
 
-      {/* --- LEADERBOARD UI --- */}
+      {/* --- LEADERBOARD UI WITH PHOTOS --- */}
       {leaderboard.length > 0 && (
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-3xl p-6 border border-yellow-500/20 bg-yellow-500/5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-5 gap-2">
@@ -211,11 +289,24 @@ export default function StaffDashboard() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {leaderboard.map((staff, index) => (
               <div key={staff.uid} className={`flex items-center gap-4 p-4 rounded-2xl border ${index === 0 ? 'bg-yellow-500/10 border-yellow-500/30' : 'bg-white/5 border-white/5'}`}>
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg ${index === 0 ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/20' : 'bg-white/10 text-text-bright'}`}>
-                  {index + 1}
+                
+                {/* Photo & Rank Badge */}
+                <div className="relative flex-shrink-0">
+                  <div className={`w-12 h-12 rounded-full overflow-hidden border-2 flex items-center justify-center font-bold text-lg ${index === 0 ? 'border-yellow-400 bg-[#0f172a] text-white shadow-[0_0_15px_rgba(234,179,8,0.3)]' : 'border-white/10 bg-[#0f172a] text-white'}`}>
+                    {staff.photoURL ? (
+                      <img src={staff.photoURL} alt={staff.name} className="w-full h-full object-cover" />
+                    ) : (
+                      staff.name?.charAt(0).toUpperCase()
+                    )}
+                  </div>
+                  <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${index === 0 ? 'bg-yellow-500 text-black' : 'bg-slate-700 text-white'}`}>
+                    {index + 1}
+                  </div>
                 </div>
+
                 <div className="flex-1 overflow-hidden">
                   <p className="font-bold text-sm text-text-bright truncate">{staff.name}</p>
+                  <p className="text-[10px] text-text-muted truncate">{staff.designation || 'Nexora Team'}</p>
                   <p className="text-xs font-bold text-emerald-400 mt-0.5">{staff.workTimeStr}</p>
                 </div>
                 {index === 0 && <Award size={24} className="text-yellow-400 flex-shrink-0" />}
