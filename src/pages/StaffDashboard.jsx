@@ -69,12 +69,11 @@ export default function StaffDashboard() {
     };
   }, [user.uid, dateKey]);
 
-  // ലോഗിൻ ചെയ്ത ആളുടെ ലൈവ് ഡാറ്റ (ഐഡി കാർഡിന് വേണ്ടി)
   const currentUserProfile = useMemo(() => {
     return allUsers.find(u => u.uid === user.uid) || user;
   }, [allUsers, user]);
 
-  // --- LEADERBOARD LOGIC (ഫോട്ടോയും ഡെസിഗ്നേഷനും കൂടെ വലിച്ചെടുക്കുന്നു) ---
+  // --- LEADERBOARD LOGIC ---
   const leaderboard = useMemo(() => {
     const currentMonth = dateKey.substring(0, 7); 
     const now = new Date();
@@ -142,7 +141,6 @@ export default function StaffDashboard() {
       const totalMinutes = Math.floor((totalSecs % 3600) / 60);
       const workTimeStr = `${totalHours}h ${totalMinutes}m`;
 
-      // ഇവിടെ യൂസറിന്റെ ഫോട്ടോയും പോസ്റ്റും കൂടെ പാസ്സ് ചെയ്യുന്നു!
       return { 
         name: u.name, 
         uid: u.uid, 
@@ -181,6 +179,9 @@ export default function StaffDashboard() {
           {todayRecord && <StatusBadge status={todayRecord.status} />}
         </div>
       </motion.div>
+
+      {/* --- Attendance Component (Punch In / Out) MOVED TO TOP --- */}
+      <MarkAttendance onMarked={handleMarked} todayRecord={todayRecord} />
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -315,9 +316,6 @@ export default function StaffDashboard() {
           </div>
         </motion.div>
       )}
-
-      {/* Attendance Component (Punch In / Out) */}
-      <MarkAttendance onMarked={handleMarked} todayRecord={todayRecord} />
 
       {/* Leave Status Display */}
       <AnimatePresence>
