@@ -42,83 +42,76 @@ export default function AdminDashboard() {
     return () => { unsubAttendance(); unsubLeaves(); };
   }, []);
 
-  // ഡാറ്റാബേസിൽ ഫീൽഡ് പേര് എന്തായാലും കണ്ടുപിടിക്കാനുള്ള സ്മാർട്ട് ഫങ്ക്ഷൻ
   const getInTime = (r) => r?.punchIn || r?.checkIn || r?.timeIn || r?.inTime || null;
   const getOutTime = (r) => r?.punchOut || r?.checkOut || r?.timeOut || r?.outTime || null;
 
-  // --- 1. SUPER SMART LEADERBOARD (Bulletproof Time Parser) ---
+  // --- 1. SUPER SMART LEADERBOARD ---
   const leaderboard = useMemo(() => {
     const currentMonth = filters.month || format(new Date(), 'yyyy-MM');
     const now = new Date();
     const todayDateStr = format(now, 'yyyy-MM-dd');
-    const currentSecs = (now.getHours() * 3600) + (now.getMinutes() * 60) + now.getSeconds();
-    
-    // സമയം എന്ത് ഫോർമാറ്റിലാണെങ്കിലും സെക്കൻഡിലേക്ക് മാറ്റുന്ന ഫങ്ക്ഷൻ
-    const parseTime = (val) => {
-      if (!val) return null;
-      // 1. Firebase Timestamp ആണെങ്കിൽ
-      if (typeof val.toDate === 'function') {
-        const d = val.toDate();
-        return (d.getHours() * 3600) + (d.getMinutes() * 60) + d.getSeconds();
+    const currentSecs = (now.getHours() * 3600) + (now.getMinutes() * 60);
+
+    const parseTime = (timeStr) => {
+      if (!timeStr) return null;
+      if (typeof timeStr.toDate === 'function') {
+         const d = timeStr.toDate();
+         return (d.getHours() * 3600) + (d.getMinutes() * 60);
       }
-      // 2. JavaScript Date Object ആണെങ്കിൽ
-      if (val instanceof Date) {
-        return (val.getHours() * 3600) + (val.getMinutes() * 60) + val.getSeconds();
-      }
-      // 3. String (Text) ആണെങ്കിൽ
-      const str = String(val);
-      const timeMatch = str.match(/(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?/);
-      if (timeMatch) {
-        let h = parseInt(timeMatch[1], 10);
-        let m = parseInt(timeMatch[2], 10);
-        let s = timeMatch[3] ? parseInt(timeMatch[3], 10) : 0;
-        const lowerStr = str.toLowerCase();
-        if (lowerStr.includes('pm') && h < 12) h += 12;
-        if (lowerStr.includes('am') && h === 12) h = 0;
-        return (h * 3600) + (m * 60) + s;
-      }
-      return null;
+      const str = String(timeStr).toLowerCase();
+      const match = str.match(/(\d{1,2}):(\d{1,2})/); 
+      if (!match) return null;
+      
+      let h = parseInt(match[1], 10);
+      let m = parseInt(match[2], 10);
+      if (str.includes('pm') && h < 12) h += 12;
+      if (str.includes('am') && h === 12) h = 0;
+      return (h * 3600) + (m * 60);
     };
 
     const monthStats = users.map(user => {
       const userRecords = records.filter(r => 
         r.uid === user.uid && 
-        r.date?.startsWith(currentMonth) && 
-        (r.status?.toLowerCase() === 'present' || r.status?.toLowerCase() === 'late')
+        r.date?.startsWith(currentMonth)
       );
       
-      let totalWorkingSeconds = 0;
-      let presentDays = userRecords.length;
+      let totalSecs = 0;
+      let presentDays = 0;
 
       userRecords.forEach(r => {
+        if (!r.status || r.status.toLowerCase() !== 'present' && r.status.toLowerCase() !== 'late') return;
+        
         const inVal = getInTime(r);
-        let outVal = getOutTime(r);
-
-        let inSec = parseTime(inVal);
+        if (!inVal || String(inVal).includes('--') || String(inVal).includes('LEAVE')) return;
+        
+        const inSec = parseTime(inVal);
+        if (inSec === null) return;
+        
+        presentDays++;
+        const outVal = getOutTime(r);
         let outSec = parseTime(outVal);
+        const isWorking = !outVal || String(outVal).toLowerCase().includes('work');
 
-        // LIVE TRACKING: ഇന്ന് വർക്കിങ് ആണെങ്കിൽ ഇതുവരെയുള്ള സമയം എടുക്കും
-        if ((!outVal || String(outVal).toLowerCase().includes('work')) && r.date === todayDateStr) {
-          outSec = currentSecs;
+        if (isWorking) {
+          if (r.date === todayDateStr) outSec = currentSecs; 
+          else outSec = 18 * 3600; 
         }
 
-        // കറക്റ്റ് ആയി കാൽക്കുലേറ്റ് ചെയ്യുന്നു
-        if (inSec !== null && outSec !== null && !isNaN(inSec) && !isNaN(outSec)) {
+        if (outSec !== null) {
           let diff = outSec - inSec;
-          if (diff < 0) diff += 24 * 3600; // നൈറ്റ് ഷിഫ്റ്റ് വരികയാണെങ്കിൽ
-          totalWorkingSeconds += diff;
+          if (diff < 0) diff += 24 * 3600; 
+          totalSecs += diff;
         }
       });
       
-      // മൊത്തം സമയത്തിനെ മണിക്കൂറും മിനിറ്റും ആക്കുന്നു
-      const totalHours = Math.floor(totalWorkingSeconds / 3600);
-      const totalMinutes = Math.floor((totalWorkingSeconds % 3600) / 60);
+      const totalHours = Math.floor(totalSecs / 3600);
+      const totalMinutes = Math.floor((totalSecs % 3600) / 60);
       const workTimeStr = `${totalHours}h ${totalMinutes}m`;
 
-      return { name: user.name, uid: user.uid, totalWorkingSeconds, workTimeStr, presentDays };
+      return { name: user.name, uid: user.uid, totalSecs, workTimeStr, presentDays };
     });
 
-    return monthStats.sort((a, b) => b.totalWorkingSeconds - a.totalWorkingSeconds).slice(0, 3);
+    return monthStats.sort((a, b) => b.totalSecs - a.totalSecs).slice(0, 3);
   }, [records, users, filters.month]);
 
   // --- 2. SMART COMBINED RECORDS ---
@@ -146,8 +139,7 @@ export default function AdminDashboard() {
           if (activeLeave) {
             leaveEntries.push({
               id: `leave-${user.uid}`, uid: user.uid, name: user.name, date: filters.date,
-              status: 'leave', timeIn: 'ON LEAVE', checkIn: 'ON LEAVE', punchIn: 'ON LEAVE', 
-              timeOut: activeLeave.type, checkOut: activeLeave.type, punchOut: activeLeave.type, location: 'Approved Leave'
+              status: 'leave', checkIn: 'ON LEAVE', checkOut: activeLeave.type, location: 'Approved Leave'
             });
           }
         }
@@ -158,23 +150,14 @@ export default function AdminDashboard() {
 
     return combined.filter(r => r.name?.toLowerCase().includes(filters.search.toLowerCase()))
       .map(record => {
-        const outVal = getOutTime(record);
         const isPastDay = record.date !== format(now, 'yyyy-MM-dd');
+        const outVal = getOutTime(record);
+        const isWorking = !outVal || String(outVal).toLowerCase().includes('work');
         
-        let newStatus = record.status;
         let newOutVal = outVal;
+        if (isWorking && (isPast9PM || isPastDay)) newOutVal = 'Forgot Out';
 
-        // Auto-Miss Logic
-        if ((!outVal || String(outVal).toLowerCase().includes('work')) && (isPast9PM || isPastDay)) {
-          newStatus = 'Forgot Out';
-          newOutVal = 'AUTO-MISS';
-        }
-
-        return { 
-          ...record, 
-          status: newStatus, 
-          timeOut: newOutVal, checkOut: newOutVal, punchOut: newOutVal 
-        };
+        return { ...record, checkOut: newOutVal };
       });
   }, [records, leaves, users, filters]);
 
@@ -189,32 +172,49 @@ export default function AdminDashboard() {
     });
   }, [leaves, users, records, filters.date]);
 
-  // --- 4. MONTHLY CALENDAR GRID LOGIC ---
+  // --- 4. MONTHLY CALENDAR GRID LOGIC (BUG FIXED HERE!) ---
   const getFullMonthReport = (staffId, selectedMonth) => {
     if (!staffId || !selectedMonth) return [];
-    const [year, month] = selectedMonth.split('-');
-    const daysCount = getDaysInMonth(new Date(parseInt(year), parseInt(month) - 1));
-    const staffRecords = records.filter(r => r.uid === staffId && r.date.startsWith(selectedMonth));
-    const today = startOfDay(new Date());
+    
+    const [yearStr, monthStr] = selectedMonth.split('-');
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
+    const daysCount = getDaysInMonth(new Date(year, month - 1));
+    
+    const staffRecords = records.filter(r => r.uid === staffId && r.date?.startsWith(selectedMonth));
+    const todayStr = format(new Date(), 'yyyy-MM-dd'); // ഇന്നത്തെ തീയതി
     const report = [];
 
     const formatTimeForCalendar = (val) => {
       if (!val) return '--:--';
-      if (typeof val.toDate === 'function') return format(val.toDate(), 'HH:mm:ss');
-      if (val instanceof Date) return format(val, 'HH:mm:ss');
+      if (typeof val.toDate === 'function') return format(val.toDate(), 'HH:mm');
+      if (val instanceof Date) return format(val, 'HH:mm');
       return String(val);
     };
 
     for (let i = 1; i <= daysCount; i++) {
-      const currentDate = new Date(parseInt(year), parseInt(month) - 1, i);
+      const currentDate = new Date(year, month - 1, i);
       const dateStr = format(currentDate, 'yyyy-MM-dd');
       const record = staffRecords.find(r => r.date === dateStr);
-      let status = record ? record.status : 'absent';
-      const approvedLeave = leaves.find(l => l.userId === staffId && l.status === 'approved' && isWithinInterval(currentDate, { start: startOfDay(parseISO(l.startDate)), end: endOfDay(parseISO(l.endDate)) }));
       
-      if (approvedLeave && !record) status = 'leave';
-      else if (isAfter(currentDate, today)) status = 'upcoming';
-      else if (currentDate.getDay() === 0 && !record) status = 'holiday';
+      // റെക്കോർഡ് ഉണ്ടെങ്കിൽ അതിന്റെ സ്റ്റാറ്റസ് എടുക്കും, ഇല്ലെങ്കിൽ absent
+      let status = record ? (record.status || 'absent').toLowerCase() : 'absent';
+      
+      const isFuture = dateStr > todayStr; // ഇന്നത്തെ തീയതിയേക്കാൾ വലുതാണോ എന്ന് നോക്കുന്നു
+      const isSunday = currentDate.getDay() === 0; // ഞായറാഴ്ചയാണോ എന്ന് നോക്കുന്നു
+      
+      const approvedLeave = leaves.find(l => 
+        l.userId === staffId && 
+        l.status === 'approved' && 
+        dateStr >= l.startDate && dateStr <= l.endDate
+      );
+      
+      // നിർണ്ണായകമായ മാറ്റം: ഡാറ്റാബേസിൽ absent എന്ന് കിടന്നാലും അതിനെ നമ്മൾ മാറ്റിയെഴുതുന്നു!
+      if (!record || status === 'absent') {
+        if (approvedLeave) status = 'leave';
+        else if (isFuture) status = 'upcoming';
+        else if (isSunday) status = 'holiday';
+      }
       
       const inVal = record ? formatTimeForCalendar(getInTime(record)) : '--:--';
       report.push({ date: dateStr, status: status, checkIn: inVal });
@@ -222,7 +222,7 @@ export default function AdminDashboard() {
     return report;
   };
 
-  // --- 5. EXPORT & EMAIL LOGIC ---
+  // --- 5. EXPORT LOGIC ---
   const exportMonthlySummary = () => {
     const currentMonth = filters.month || format(new Date(), 'yyyy-MM');
     const reportData = records.filter(r => r.date?.startsWith(currentMonth));
@@ -312,10 +312,10 @@ export default function AdminDashboard() {
         </motion.div>
 
         <div className="lg:col-span-2 space-y-4">
-          {finalRecords.some(r => r.checkOut === 'AUTO-MISS') && (
+          {finalRecords.some(r => r.checkOut === 'Forgot Out') && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-2xl flex items-center gap-3">
               <AlertCircle className="text-rose-400" size={20} />
-              <p className="text-sm text-rose-300 font-medium">System Alert: Some staff forgot to punch out. Marked as AUTO-MISS.</p>
+              <p className="text-sm text-rose-300 font-medium">System Alert: Some staff forgot to punch out. Marked as Forgot Out.</p>
             </motion.div>
           )}
 
@@ -360,7 +360,7 @@ export default function AdminDashboard() {
                 <div key={day.date} className={`p-2 rounded-xl border ${color} transition-all`}>
                   <p className="text-[9px] opacity-60 font-mono">{day.date.split('-')[2]}/{day.date.split('-')[1]}</p>
                   <p className="text-[10px] font-bold uppercase mt-0.5 flex items-center gap-1">{day.status === 'leave' && <PlaneTakeoff size={10} />}{day.status === 'holiday' ? 'SUNDAY' : day.status}</p>
-                  {(day.status?.toLowerCase() === 'present' || day.status?.toLowerCase() === 'late' || day.status === 'Forgot Out') && <p className="text-[8px] opacity-80 mt-0.5">{day.checkIn}</p>}
+                  {(day.status === 'present' || day.status === 'late' || day.status === 'Forgot Out') && <p className="text-[8px] opacity-80 mt-0.5">{day.checkIn}</p>}
                 </div>
               );
             })}
