@@ -1,15 +1,15 @@
-// src/pages/StaffDashboard.jsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  CheckCircle, XCircle, Clock, TrendingUp, Calendar, MapPin, Zap, FileText, Info
+  CheckCircle, XCircle, Clock, TrendingUp, Calendar, MapPin, Zap, FileText, Info, Trophy, Award
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useClock } from '../hooks/useClock';
-import { getTodayAttendance, getUserAttendance, getAttendanceStats } from '../services/attendanceService';
+import { getTodayAttendance, getUserAttendance, getAttendanceStats, subscribeToAttendance, getAllUsers } from '../services/attendanceService';
 import { db } from '../firebase/config';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
+import { format } from 'date-fns';
 import MarkAttendance from '../components/attendance/MarkAttendance';
 import StatCard from '../components/ui/StatCard';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -24,6 +24,10 @@ export default function StaffDashboard() {
   const [myLeaves, setMyLeaves] = useState([]);
   const [stats, setStats] = useState({ total: 0, present: 0, absent: 0, late: 0, percentage: 0 });
   const [loading, setLoading] = useState(true);
+
+  // Leaderboard-നു വേണ്ടിയുള്ള പുതിയ സ്റ്റേറ്റുകൾ
+  const [allRecords, setAllRecords] = useState([]);
+  const [allUsers, setAllUsers] = useState([]);
 
   useEffect(() => {
     const loadData = async () => {
@@ -43,7 +47,11 @@ export default function StaffDashboard() {
 
     loadData();
 
-    // Leave status query (Simplified to avoid Index error)
+    // ലീഡർബോർഡിന് വേണ്ടി എല്ലാവരുടെയും ഡാറ്റ എടുക്കുന്നു
+    getAllUsers().then(setAllUsers);
+    const unsubAll = subscribeToAttendance((data) => setAllRecords(data));
+
+    // Leave status query
     const q = query(
       collection(db, 'leaves'), 
       where('userId', '==', user.uid)
@@ -51,15 +59,91 @@ export default function StaffDashboard() {
 
     const unsubLeaves = onSnapshot(q, (snapshot) => {
       const leaveList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      // UI-il latest aayi vannath mukalil kaanan manual sorting
       const sortedLeaves = leaveList.sort((a, b) => b.createdAt?.seconds - a.createdAt?.seconds);
       setMyLeaves(sortedLeaves);
     }, (error) => {
       console.error("Leave Firestore Error:", error);
     });
 
-    return () => unsubLeaves();
+    return () => {
+      unsubLeaves();
+      if(unsubAll) unsubAll();
+    };
   }, [user.uid, dateKey]);
+
+  // --- LEADERBOARD LOGIC (Admin Panel-ൽ ചെയ്ത അതേ സ്മാർട്ട് ലോജിക്) ---
+  const leaderboard = useMemo(() => {
+    const currentMonth = dateKey.substring(0, 7); // ഉദാഹരണത്തിന്: "2026-05"
+    const now = new Date();
+    const todayDateStr = format(now, 'yyyy-MM-dd');
+    const currentSecs = (now.getHours() * 3600) + (now.getMinutes() * 60);
+
+    const getInTime = (r) => r?.punchIn || r?.checkIn || r?.timeIn || r?.inTime || r?.createdAt || null;
+    const getOutTime = (r) => r?.punchOut || r?.checkOut || r?.timeOut || r?.outTime || null;
+
+    const parseTime = (timeStr) => {
+      if (!timeStr) return null;
+      try {
+        if (typeof timeStr.toDate === 'function') {
+           const d = timeStr.toDate();
+           return (d.getHours() * 3600) + (d.getMinutes() * 60);
+        }
+        if (timeStr instanceof Date) {
+           return (timeStr.getHours() * 3600) + (timeStr.getMinutes() * 60);
+        }
+        const str = String(timeStr).toLowerCase();
+        const match = str.match(/(\d{1,2}):(\d{1,2})/); 
+        if (!match) return null;
+        
+        let h = parseInt(match[1], 10);
+        let m = parseInt(match[2], 10);
+        if (str.includes('pm') && h < 12) h += 12;
+        if (str.includes('am') && h === 12) h = 0;
+        return (h * 3600) + (m * 60);
+      } catch(e) {}
+      return null;
+    };
+
+    const monthStats = allUsers.map(u => {
+      const userRecords = allRecords.filter(r => r.uid === u.uid && r.date?.startsWith(currentMonth));
+      
+      let totalSecs = 0;
+      let presentDays = 0;
+
+      userRecords.forEach(r => {
+        const inVal = getInTime(r);
+        if (!inVal || String(inVal).includes('--') || String(inVal).includes('LEAVE')) return;
+        
+        const inSec = parseTime(inVal);
+        if (inSec === null) return;
+        
+        presentDays++;
+        
+        const outVal = getOutTime(r);
+        let outSec = parseTime(outVal);
+        const isWorking = !outVal || String(outVal).toLowerCase().includes('work');
+
+        if (isWorking) {
+          if (r.date === todayDateStr) outSec = currentSecs; 
+          else outSec = 18 * 3600; 
+        }
+
+        if (outSec !== null) {
+          let diff = outSec - inSec;
+          if (diff < 0) diff += 24 * 3600; 
+          totalSecs += diff;
+        }
+      });
+      
+      const totalHours = Math.floor(totalSecs / 3600);
+      const totalMinutes = Math.floor((totalSecs % 3600) / 60);
+      const workTimeStr = `${totalHours}h ${totalMinutes}m`;
+
+      return { name: u.name, uid: u.uid, totalSecs, workTimeStr, presentDays };
+    });
+
+    return monthStats.sort((a, b) => b.totalSecs - a.totalSecs).slice(0, 3);
+  }, [allRecords, allUsers, dateKey]);
 
   const handleMarked = (record) => {
     setTodayRecord(record);
@@ -113,6 +197,37 @@ export default function StaffDashboard() {
         </Link>
       </div>
 
+      {/* --- LEADERBOARD UI --- */}
+      {leaderboard.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-3xl p-6 border border-yellow-500/20 bg-yellow-500/5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-5 gap-2">
+            <h3 className="text-lg font-bold text-text-bright flex items-center gap-2">
+              <Trophy className="text-yellow-400" size={20} /> 
+              Top Performers This Month
+            </h3>
+            <span className="text-[10px] bg-yellow-500/20 text-yellow-400 px-3 py-1 rounded-full font-bold">Based on Working Hours</span>
+          </div>
+          
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {leaderboard.map((staff, index) => (
+              <div key={staff.uid} className={`flex items-center gap-4 p-4 rounded-2xl border ${index === 0 ? 'bg-yellow-500/10 border-yellow-500/30' : 'bg-white/5 border-white/5'}`}>
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg ${index === 0 ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/20' : 'bg-white/10 text-text-bright'}`}>
+                  {index + 1}
+                </div>
+                <div className="flex-1 overflow-hidden">
+                  <p className="font-bold text-sm text-text-bright truncate">{staff.name}</p>
+                  <p className="text-xs font-bold text-emerald-400 mt-0.5">{staff.workTimeStr}</p>
+                </div>
+                {index === 0 && <Award size={24} className="text-yellow-400 flex-shrink-0" />}
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
+      {/* Attendance Component (Punch In / Out) */}
+      <MarkAttendance onMarked={handleMarked} todayRecord={todayRecord} />
+
       {/* Leave Status Display */}
       <AnimatePresence>
         {myLeaves.length > 0 && (
@@ -141,9 +256,6 @@ export default function StaffDashboard() {
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* Attendance Component - ഇവിടെയാണ് Punch Out ഫീച്ചറിനു വേണ്ടി മാറ്റം വരുത്തിയത് */}
-      <MarkAttendance onMarked={handleMarked} todayRecord={todayRecord} />
 
       {/* History Table */}
       <div className="glass rounded-2xl p-5 overflow-x-auto">
