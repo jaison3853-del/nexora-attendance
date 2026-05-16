@@ -42,31 +42,38 @@ export default function AdminDashboard() {
     return () => { unsubAttendance(); unsubLeaves(); };
   }, []);
 
-  const getInTime = (r) => r?.punchIn || r?.checkIn || r?.timeIn || r?.inTime || null;
+  // ഫയർബേസിലെ ഫീൽഡ് പേരുകൾ എന്തായാലും കണ്ടുപിടിക്കാനുള്ള ഫങ്ക്ഷൻ
+  const getInTime = (r) => r?.punchIn || r?.checkIn || r?.timeIn || r?.inTime || r?.createdAt || null;
   const getOutTime = (r) => r?.punchOut || r?.checkOut || r?.timeOut || r?.outTime || null;
 
-  // --- 1. SUPER SMART LEADERBOARD ---
+  // --- 1. SUPER SMART LEADERBOARD (Live Time, Fallback to 6PM, and Photos) ---
   const leaderboard = useMemo(() => {
     const currentMonth = filters.month || format(new Date(), 'yyyy-MM');
     const now = new Date();
     const todayDateStr = format(now, 'yyyy-MM-dd');
     const currentSecs = (now.getHours() * 3600) + (now.getMinutes() * 60);
 
-    const parseTime = (timeStr) => {
-      if (!timeStr) return null;
-      if (typeof timeStr.toDate === 'function') {
-         const d = timeStr.toDate();
-         return (d.getHours() * 3600) + (d.getMinutes() * 60);
-      }
-      const str = String(timeStr).toLowerCase();
-      const match = str.match(/(\d{1,2}):(\d{1,2})/); 
-      if (!match) return null;
-      
-      let h = parseInt(match[1], 10);
-      let m = parseInt(match[2], 10);
-      if (str.includes('pm') && h < 12) h += 12;
-      if (str.includes('am') && h === 12) h = 0;
-      return (h * 3600) + (m * 60);
+    const parseTime = (val) => {
+      if (!val) return null;
+      try {
+        if (typeof val.toDate === 'function') {
+          const d = val.toDate();
+          return (d.getHours() * 3600) + (d.getMinutes() * 60);
+        }
+        if (val instanceof Date) {
+          return (val.getHours() * 3600) + (val.getMinutes() * 60);
+        }
+        const str = String(val).toLowerCase();
+        const match = str.match(/(\d{1,2}):(\d{1,2})/); 
+        if (match) {
+          let h = parseInt(match[1], 10);
+          let m = parseInt(match[2], 10);
+          if (str.includes('pm') && h < 12) h += 12;
+          if (str.includes('am') && h === 12) h = 0;
+          return (h * 3600) + (m * 60);
+        }
+      } catch(e) {}
+      return null;
     };
 
     const monthStats = users.map(user => {
@@ -80,7 +87,7 @@ export default function AdminDashboard() {
 
       userRecords.forEach(r => {
         if (!r.status || r.status.toLowerCase() !== 'present' && r.status.toLowerCase() !== 'late') return;
-        
+
         const inVal = getInTime(r);
         if (!inVal || String(inVal).includes('--') || String(inVal).includes('LEAVE')) return;
         
@@ -88,13 +95,14 @@ export default function AdminDashboard() {
         if (inSec === null) return;
         
         presentDays++;
+        
         const outVal = getOutTime(r);
         let outSec = parseTime(outVal);
         const isWorking = !outVal || String(outVal).toLowerCase().includes('work');
 
         if (isWorking) {
           if (r.date === todayDateStr) outSec = currentSecs; 
-          else outSec = 18 * 3600; 
+          else outSec = 18 * 3600; // പഴയ ദിവസങ്ങളിൽ 6 PM
         }
 
         if (outSec !== null) {
@@ -108,13 +116,21 @@ export default function AdminDashboard() {
       const totalMinutes = Math.floor((totalSecs % 3600) / 60);
       const workTimeStr = `${totalHours}h ${totalMinutes}m`;
 
-      return { name: user.name, uid: user.uid, totalSecs, workTimeStr, presentDays };
+      return { 
+        name: user.name, 
+        uid: user.uid, 
+        totalSecs, 
+        workTimeStr, 
+        presentDays,
+        photoURL: user.photoURL,
+        designation: user.designation
+      };
     });
 
     return monthStats.sort((a, b) => b.totalSecs - a.totalSecs).slice(0, 3);
   }, [records, users, filters.month]);
 
-  // --- 2. SMART COMBINED RECORDS ---
+  // --- 2. SMART COMBINED RECORDS (Auto-Miss without breaking status) ---
   const finalRecords = useMemo(() => {
     let currentRecords = records;
     if (filters.date) currentRecords = records.filter(r => r.date === filters.date);
@@ -155,7 +171,9 @@ export default function AdminDashboard() {
         const isWorking = !outVal || String(outVal).toLowerCase().includes('work');
         
         let newOutVal = outVal;
-        if (isWorking && (isPast9PM || isPastDay)) newOutVal = 'Forgot Out';
+        if (isWorking && (isPast9PM || isPastDay)) {
+          newOutVal = 'Forgot Out';
+        }
 
         return { ...record, checkOut: newOutVal };
       });
@@ -172,7 +190,7 @@ export default function AdminDashboard() {
     });
   }, [leaves, users, records, filters.date]);
 
-  // --- 4. MONTHLY CALENDAR GRID LOGIC (BUG FIXED HERE!) ---
+  // --- 4. MONTHLY CALENDAR GRID LOGIC (Fixed Sunday & Upcoming Override) ---
   const getFullMonthReport = (staffId, selectedMonth) => {
     if (!staffId || !selectedMonth) return [];
     
@@ -182,7 +200,7 @@ export default function AdminDashboard() {
     const daysCount = getDaysInMonth(new Date(year, month - 1));
     
     const staffRecords = records.filter(r => r.uid === staffId && r.date?.startsWith(selectedMonth));
-    const todayStr = format(new Date(), 'yyyy-MM-dd'); // ഇന്നത്തെ തീയതി
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
     const report = [];
 
     const formatTimeForCalendar = (val) => {
@@ -197,11 +215,10 @@ export default function AdminDashboard() {
       const dateStr = format(currentDate, 'yyyy-MM-dd');
       const record = staffRecords.find(r => r.date === dateStr);
       
-      // റെക്കോർഡ് ഉണ്ടെങ്കിൽ അതിന്റെ സ്റ്റാറ്റസ് എടുക്കും, ഇല്ലെങ്കിൽ absent
       let status = record ? (record.status || 'absent').toLowerCase() : 'absent';
       
-      const isFuture = dateStr > todayStr; // ഇന്നത്തെ തീയതിയേക്കാൾ വലുതാണോ എന്ന് നോക്കുന്നു
-      const isSunday = currentDate.getDay() === 0; // ഞായറാഴ്ചയാണോ എന്ന് നോക്കുന്നു
+      const isFuture = dateStr > todayStr; 
+      const isSunday = currentDate.getDay() === 0; 
       
       const approvedLeave = leaves.find(l => 
         l.userId === staffId && 
@@ -209,7 +226,7 @@ export default function AdminDashboard() {
         dateStr >= l.startDate && dateStr <= l.endDate
       );
       
-      // നിർണ്ണായകമായ മാറ്റം: ഡാറ്റാബേസിൽ absent എന്ന് കിടന്നാലും അതിനെ നമ്മൾ മാറ്റിയെഴുതുന്നു!
+      // Override 'absent' if it's a future date or sunday
       if (!record || status === 'absent') {
         if (approvedLeave) status = 'leave';
         else if (isFuture) status = 'upcoming';
@@ -222,7 +239,7 @@ export default function AdminDashboard() {
     return report;
   };
 
-  // --- 5. EXPORT LOGIC ---
+  // --- 5. EXPORT & EMAIL LOGIC ---
   const exportMonthlySummary = () => {
     const currentMonth = filters.month || format(new Date(), 'yyyy-MM');
     const reportData = records.filter(r => r.date?.startsWith(currentMonth));
@@ -287,7 +304,7 @@ export default function AdminDashboard() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* --- SMART LEADERBOARD UI --- */}
+        {/* --- SMART LEADERBOARD UI WITH PHOTOS --- */}
         <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="lg:col-span-1 glass rounded-3xl p-6 border border-yellow-500/20 bg-yellow-500/5">
           <h3 className="text-lg font-bold text-text-bright mb-4 flex items-center gap-2"><Trophy className="text-yellow-400" size={20} /> Top Performers</h3>
           <p className="text-[10px] text-text-muted mb-4 leading-tight">Ranked by Total Working Hours this month.</p>
@@ -295,8 +312,22 @@ export default function AdminDashboard() {
             {leaderboard.map((staff, index) => (
               <div key={staff.uid} className="flex items-center justify-between bg-white/5 p-3 rounded-2xl border border-white/5">
                 <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${index === 0 ? 'bg-yellow-500 text-black shadow-lg shadow-yellow-500/20' : 'bg-white/10'}`}>{index + 1}</div>
-                  <span className="font-bold text-sm text-text-bright truncate max-w-[100px]">{staff.name}</span>
+                  <div className="relative flex-shrink-0">
+                    <div className={`w-10 h-10 rounded-full overflow-hidden border-2 flex items-center justify-center font-bold text-sm ${index === 0 ? 'border-yellow-400 bg-yellow-500 text-black shadow-[0_0_10px_rgba(234,179,8,0.3)]' : 'border-white/10 bg-white/10 text-white'}`}>
+                      {staff.photoURL ? (
+                        <img src={staff.photoURL} alt={staff.name} className="w-full h-full object-cover" />
+                      ) : (
+                        staff.name?.charAt(0).toUpperCase()
+                      )}
+                    </div>
+                    <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold ${index === 0 ? 'bg-yellow-500 text-black' : 'bg-slate-700 text-white'}`}>
+                      {index + 1}
+                    </div>
+                  </div>
+                  <div className="overflow-hidden">
+                    <p className="font-bold text-sm text-text-bright truncate max-w-[100px]">{staff.name}</p>
+                    <p className="text-[9px] text-text-muted truncate">{staff.designation || 'Nexora Team'}</p>
+                  </div>
                 </div>
                 <div className="flex flex-col items-end">
                   <div className="flex items-center gap-1">
@@ -360,7 +391,7 @@ export default function AdminDashboard() {
                 <div key={day.date} className={`p-2 rounded-xl border ${color} transition-all`}>
                   <p className="text-[9px] opacity-60 font-mono">{day.date.split('-')[2]}/{day.date.split('-')[1]}</p>
                   <p className="text-[10px] font-bold uppercase mt-0.5 flex items-center gap-1">{day.status === 'leave' && <PlaneTakeoff size={10} />}{day.status === 'holiday' ? 'SUNDAY' : day.status}</p>
-                  {(day.status === 'present' || day.status === 'late' || day.status === 'Forgot Out') && <p className="text-[8px] opacity-80 mt-0.5">{day.checkIn}</p>}
+                  {(day.status?.toLowerCase() === 'present' || day.status?.toLowerCase() === 'late' || day.status === 'Forgot Out') && <p className="text-[8px] opacity-80 mt-0.5">{day.checkIn}</p>}
                 </div>
               );
             })}
