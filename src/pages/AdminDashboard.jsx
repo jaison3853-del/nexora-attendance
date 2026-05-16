@@ -42,38 +42,31 @@ export default function AdminDashboard() {
     return () => { unsubAttendance(); unsubLeaves(); };
   }, []);
 
-  // ഡാറ്റാബേസിൽ ഫീൽഡ് പേര് എന്തായാലും കണ്ടുപിടിക്കാൻ (BUG FIXED HERE!)
-  const getInTime = (r) => r?.checkIn || r?.punchIn || r?.timeIn || r?.inTime || r?.createdAt || null;
-  const getOutTime = (r) => r?.checkOut || r?.punchOut || r?.timeOut || r?.outTime || null;
+  const getInTime = (r) => r?.punchIn || r?.checkIn || r?.timeIn || r?.inTime || null;
+  const getOutTime = (r) => r?.punchOut || r?.checkOut || r?.timeOut || r?.outTime || null;
 
-  // --- 1. SUPER SMART LEADERBOARD (Now perfectly using getInTime) ---
+  // --- 1. SUPER SMART LEADERBOARD ---
   const leaderboard = useMemo(() => {
     const currentMonth = filters.month || format(new Date(), 'yyyy-MM');
     const now = new Date();
     const todayDateStr = format(now, 'yyyy-MM-dd');
     const currentSecs = (now.getHours() * 3600) + (now.getMinutes() * 60);
 
-    const parseTime = (val) => {
-      if (!val) return null;
-      try {
-        if (typeof val.toDate === 'function') {
-          const d = val.toDate();
-          return (d.getHours() * 3600) + (d.getMinutes() * 60);
-        }
-        if (val instanceof Date) {
-          return (val.getHours() * 3600) + (val.getMinutes() * 60);
-        }
-        const str = String(val).toLowerCase();
-        const match = str.match(/(\d{1,2}):(\d{1,2})/); 
-        if (match) {
-          let h = parseInt(match[1], 10);
-          let m = parseInt(match[2], 10);
-          if (str.includes('pm') && h < 12) h += 12;
-          if (str.includes('am') && h === 12) h = 0;
-          return (h * 3600) + (m * 60);
-        }
-      } catch(e) {}
-      return null;
+    const parseTime = (timeStr) => {
+      if (!timeStr) return null;
+      if (typeof timeStr.toDate === 'function') {
+         const d = timeStr.toDate();
+         return (d.getHours() * 3600) + (d.getMinutes() * 60);
+      }
+      const str = String(timeStr).toLowerCase();
+      const match = str.match(/(\d{1,2}):(\d{1,2})/); 
+      if (!match) return null;
+      
+      let h = parseInt(match[1], 10);
+      let m = parseInt(match[2], 10);
+      if (str.includes('pm') && h < 12) h += 12;
+      if (str.includes('am') && h === 12) h = 0;
+      return (h * 3600) + (m * 60);
     };
 
     const monthStats = users.map(user => {
@@ -86,26 +79,22 @@ export default function AdminDashboard() {
       let presentDays = 0;
 
       userRecords.forEach(r => {
-        // ഇവിടെ ഞാൻ r.checkIn ന് പകരം getInTime(r) ഉപയോഗിച്ചു!
-        const inVal = getInTime(r);
+        if (!r.status || r.status.toLowerCase() !== 'present' && r.status.toLowerCase() !== 'late') return;
         
+        const inVal = getInTime(r);
         if (!inVal || String(inVal).includes('--') || String(inVal).includes('LEAVE')) return;
         
         const inSec = parseTime(inVal);
         if (inSec === null) return;
         
         presentDays++;
-        
         const outVal = getOutTime(r);
         let outSec = parseTime(outVal);
         const isWorking = !outVal || String(outVal).toLowerCase().includes('work');
 
         if (isWorking) {
-          if (r.date === todayDateStr) {
-            outSec = currentSecs; // ഇന്ന് വർക്കിങ് ആണെങ്കിൽ ലൈവ് സമയം
-          } else {
-            outSec = 18 * 3600; // പഴയ ഡേറ്റിൽ പഞ്ച് ഔട്ട് മറന്നാൽ 6:00 PM
-          }
+          if (r.date === todayDateStr) outSec = currentSecs; 
+          else outSec = 18 * 3600; 
         }
 
         if (outSec !== null) {
@@ -125,7 +114,7 @@ export default function AdminDashboard() {
     return monthStats.sort((a, b) => b.totalSecs - a.totalSecs).slice(0, 3);
   }, [records, users, filters.month]);
 
-  // --- 2. SMART COMBINED RECORDS (Table Normalizer & Auto-Miss) ---
+  // --- 2. SMART COMBINED RECORDS ---
   const finalRecords = useMemo(() => {
     let currentRecords = records;
     if (filters.date) currentRecords = records.filter(r => r.date === filters.date);
@@ -166,10 +155,7 @@ export default function AdminDashboard() {
         const isWorking = !outVal || String(outVal).toLowerCase().includes('work');
         
         let newOutVal = outVal;
-
-        if (isWorking && (isPast9PM || isPastDay)) {
-          newOutVal = 'Forgot Out';
-        }
+        if (isWorking && (isPast9PM || isPastDay)) newOutVal = 'Forgot Out';
 
         return { ...record, checkOut: newOutVal };
       });
@@ -186,42 +172,57 @@ export default function AdminDashboard() {
     });
   }, [leaves, users, records, filters.date]);
 
-  // --- 4. MONTHLY CALENDAR GRID LOGIC ---
+  // --- 4. MONTHLY CALENDAR GRID LOGIC (BUG FIXED HERE!) ---
   const getFullMonthReport = (staffId, selectedMonth) => {
     if (!staffId || !selectedMonth) return [];
-    const [year, month] = selectedMonth.split('-');
-    const daysCount = getDaysInMonth(new Date(parseInt(year), parseInt(month) - 1));
-    const staffRecords = records.filter(r => r.uid === staffId && r.date.startsWith(selectedMonth));
-    const today = startOfDay(new Date());
+    
+    const [yearStr, monthStr] = selectedMonth.split('-');
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
+    const daysCount = getDaysInMonth(new Date(year, month - 1));
+    
+    const staffRecords = records.filter(r => r.uid === staffId && r.date?.startsWith(selectedMonth));
+    const todayStr = format(new Date(), 'yyyy-MM-dd'); // ഇന്നത്തെ തീയതി
     const report = [];
 
+    const formatTimeForCalendar = (val) => {
+      if (!val) return '--:--';
+      if (typeof val.toDate === 'function') return format(val.toDate(), 'HH:mm');
+      if (val instanceof Date) return format(val, 'HH:mm');
+      return String(val);
+    };
+
     for (let i = 1; i <= daysCount; i++) {
-      const currentDate = new Date(parseInt(year), parseInt(month) - 1, i);
+      const currentDate = new Date(year, month - 1, i);
       const dateStr = format(currentDate, 'yyyy-MM-dd');
       const record = staffRecords.find(r => r.date === dateStr);
-      let status = record ? record.status : 'absent';
-      const approvedLeave = leaves.find(l => l.userId === staffId && l.status === 'approved' && isWithinInterval(currentDate, { start: startOfDay(parseISO(l.startDate)), end: endOfDay(parseISO(l.endDate)) }));
       
-      if (approvedLeave && !record) status = 'leave';
-      else if (isAfter(currentDate, today)) status = 'upcoming';
-      else if (currentDate.getDay() === 0 && !record) status = 'holiday';
+      // റെക്കോർഡ് ഉണ്ടെങ്കിൽ അതിന്റെ സ്റ്റാറ്റസ് എടുക്കും, ഇല്ലെങ്കിൽ absent
+      let status = record ? (record.status || 'absent').toLowerCase() : 'absent';
       
-      const inVal = record ? (getInTime(record) || '--:--') : '--:--';
+      const isFuture = dateStr > todayStr; // ഇന്നത്തെ തീയതിയേക്കാൾ വലുതാണോ എന്ന് നോക്കുന്നു
+      const isSunday = currentDate.getDay() === 0; // ഞായറാഴ്ചയാണോ എന്ന് നോക്കുന്നു
       
-      // കലണ്ടറിൽ കാണിക്കാൻ ഒബ്ജക്റ്റ് ആണെങ്കിൽ സ്ട്രിങ് ആക്കുന്നു
-      let displayIn = '--:--';
-      if (inVal && typeof inVal.toDate === 'function') {
-         displayIn = format(inVal.toDate(), 'HH:mm');
-      } else if (inVal) {
-         displayIn = String(inVal);
+      const approvedLeave = leaves.find(l => 
+        l.userId === staffId && 
+        l.status === 'approved' && 
+        dateStr >= l.startDate && dateStr <= l.endDate
+      );
+      
+      // നിർണ്ണായകമായ മാറ്റം: ഡാറ്റാബേസിൽ absent എന്ന് കിടന്നാലും അതിനെ നമ്മൾ മാറ്റിയെഴുതുന്നു!
+      if (!record || status === 'absent') {
+        if (approvedLeave) status = 'leave';
+        else if (isFuture) status = 'upcoming';
+        else if (isSunday) status = 'holiday';
       }
-
-      report.push({ date: dateStr, status: status, checkIn: displayIn });
+      
+      const inVal = record ? formatTimeForCalendar(getInTime(record)) : '--:--';
+      report.push({ date: dateStr, status: status, checkIn: inVal });
     }
     return report;
   };
 
-  // --- 5. EXPORT & EMAIL LOGIC ---
+  // --- 5. EXPORT LOGIC ---
   const exportMonthlySummary = () => {
     const currentMonth = filters.month || format(new Date(), 'yyyy-MM');
     const reportData = records.filter(r => r.date?.startsWith(currentMonth));
@@ -359,7 +360,7 @@ export default function AdminDashboard() {
                 <div key={day.date} className={`p-2 rounded-xl border ${color} transition-all`}>
                   <p className="text-[9px] opacity-60 font-mono">{day.date.split('-')[2]}/{day.date.split('-')[1]}</p>
                   <p className="text-[10px] font-bold uppercase mt-0.5 flex items-center gap-1">{day.status === 'leave' && <PlaneTakeoff size={10} />}{day.status === 'holiday' ? 'SUNDAY' : day.status}</p>
-                  {(day.status?.toLowerCase() === 'present' || day.status?.toLowerCase() === 'late' || day.status === 'Forgot Out') && <p className="text-[8px] opacity-80 mt-0.5">{day.checkIn}</p>}
+                  {(day.status === 'present' || day.status === 'late' || day.status === 'Forgot Out') && <p className="text-[8px] opacity-80 mt-0.5">{day.checkIn}</p>}
                 </div>
               );
             })}

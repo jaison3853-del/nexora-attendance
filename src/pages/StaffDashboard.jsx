@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  CheckCircle, XCircle, Clock, TrendingUp, Calendar, MapPin, Zap, FileText, Info, Trophy, Award, QrCode, RefreshCcw, IdCard
+  CheckCircle, XCircle, Clock, TrendingUp, Calendar, MapPin, Zap, FileText, Info, Trophy, Award, QrCode, RefreshCcw, IdCard, X 
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -16,6 +16,9 @@ import StatusBadge from '../components/ui/StatusBadge';
 import Loader from '../components/ui/Loader';
 import AttendanceTable from '../components/attendance/AttendanceTable';
 
+// നിങ്ങളുടെ പോസ്റ്റർ assets ഫോൾഡറിൽ നിന്നും ഇമ്പോർട്ട് ചെയ്യുന്നു
+import welcomePoster from '../assets/poster.jpg'; 
+
 export default function StaffDashboard() {
   const { user } = useAuth();
   const { date, dateKey } = useClock();
@@ -24,6 +27,9 @@ export default function StaffDashboard() {
   const [myLeaves, setMyLeaves] = useState([]);
   const [stats, setStats] = useState({ total: 0, present: 0, absent: 0, late: 0, percentage: 0 });
   const [loading, setLoading] = useState(true);
+
+  // പോസ്റ്റർ കാണിക്കാനുള്ള സ്റ്റേറ്റ്
+  const [showWelcomePoster, setShowWelcomePoster] = useState(false);
 
   const [isIdFlipped, setIsIdFlipped] = useState(false);
   const [allRecords, setAllRecords] = useState([]);
@@ -63,11 +69,20 @@ export default function StaffDashboard() {
       console.error("Leave Firestore Error:", error);
     });
 
+    // പോസ്റ്റർ ലോജിക്: ഒരു സെഷനിൽ ഒരു തവണ മാത്രം കാണിക്കാൻ
+    const hasSeenPoster = sessionStorage.getItem('seenChallengePoster');
+    if (!hasSeenPoster) {
+      setTimeout(() => setShowWelcomePoster(true), 500); // അര സെക്കൻഡ് കഴിഞ്ഞ് പോപ്പപ്പ് വരും
+      sessionStorage.setItem('seenChallengePoster', 'true');
+    }
+
     return () => {
       unsubLeaves();
       if(unsubAll) unsubAll();
     };
   }, [user.uid, dateKey]);
+
+  const closeWelcomePoster = () => setShowWelcomePoster(false);
 
   const currentUserProfile = useMemo(() => {
     return allUsers.find(u => u.uid === user.uid) || user;
@@ -162,7 +177,46 @@ export default function StaffDashboard() {
   if (loading) return <Loader />;
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto pb-10 px-4">
+    <div className="relative space-y-6 max-w-5xl mx-auto pb-10 px-4">
+      
+      {/* --- WELCOME POSTER POPUP MODAL --- */}
+      <AnimatePresence>
+        {showWelcomePoster && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3 }}
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[999] p-4"
+            onClick={closeWelcomePoster}
+          >
+            <motion.div
+              initial={{ scale: 0.8, y: 50 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.8, y: 50, opacity: 0 }}
+              transition={{ type: "spring", bounce: 0.4 }}
+              className="bg-[#0f172a] border border-cyan-500/30 rounded-3xl max-w-md w-full relative overflow-hidden shadow-[0_0_50px_rgba(34,211,238,0.15)]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                onClick={closeWelcomePoster}
+                className="absolute top-4 right-4 z-10 p-2 bg-black/50 hover:bg-rose-500/80 rounded-full text-white/80 hover:text-white transition-all border border-white/10"
+              >
+                <X size={20} />
+              </button>
+              
+              <div className="p-1">
+                <img 
+                  src={welcomePoster} 
+                  alt="Staff Performance Challenge" 
+                  className="w-full h-auto rounded-2xl block"
+                />
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Header Section */}
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -180,7 +234,7 @@ export default function StaffDashboard() {
         </div>
       </motion.div>
 
-      {/* --- Attendance Component (Punch In / Out) MOVED TO TOP --- */}
+      {/* Attendance Component (Punch In / Out) */}
       <MarkAttendance onMarked={handleMarked} todayRecord={todayRecord} />
 
       {/* Stats Grid */}
@@ -290,8 +344,6 @@ export default function StaffDashboard() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {leaderboard.map((staff, index) => (
               <div key={staff.uid} className={`flex items-center gap-4 p-4 rounded-2xl border ${index === 0 ? 'bg-yellow-500/10 border-yellow-500/30' : 'bg-white/5 border-white/5'}`}>
-                
-                {/* Photo & Rank Badge */}
                 <div className="relative flex-shrink-0">
                   <div className={`w-12 h-12 rounded-full overflow-hidden border-2 flex items-center justify-center font-bold text-lg ${index === 0 ? 'border-yellow-400 bg-[#0f172a] text-white shadow-[0_0_15px_rgba(234,179,8,0.3)]' : 'border-white/10 bg-[#0f172a] text-white'}`}>
                     {staff.photoURL ? (
@@ -304,7 +356,6 @@ export default function StaffDashboard() {
                     {index + 1}
                   </div>
                 </div>
-
                 <div className="flex-1 overflow-hidden">
                   <p className="font-bold text-sm text-text-bright truncate">{staff.name}</p>
                   <p className="text-[10px] text-text-muted truncate">{staff.designation || 'Nexora Team'}</p>
