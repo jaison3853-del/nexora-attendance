@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  CheckCircle, XCircle, Clock, TrendingUp, Calendar, MapPin, Zap, FileText, Info, Trophy, Award, QrCode, RefreshCcw, IdCard, X, Play, Code
+  CheckCircle, XCircle, Clock, TrendingUp, Calendar, MapPin, Zap, FileText, Info, Trophy, Award, QrCode, RefreshCcw, IdCard, X, Play, Code, Database, Layers, Cpu
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -29,8 +29,8 @@ export default function StaffDashboard() {
   const [showWelcomePoster, setShowWelcomePoster] = useState(false);
   const [isIdFlipped, setIsIdFlipped] = useState(false);
   
-  // സിനിമാറ്റിക് വീഡിയോ പ്ലേ ചെയ്യാനുള്ള സ്റ്റേറ്റ് 🎬
-  const [showDirectorCut, setShowDirectorCut] = useState(false);
+  // 3D ഗ്ലാസ്സ് കാർഡ് കാണിക്കാനുള്ള സ്റ്റേറ്റ് 🛡️
+  const [showDevCard, setShowDevCard] = useState(false);
 
   const [allRecords, setAllRecords] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
@@ -77,7 +77,6 @@ export default function StaffDashboard() {
   }, [allUsers, user]);
 
   const leaderboard = useMemo(() => {
-    // ... (നിങ്ങളുടെ പഴയ ലീഡർബോർഡ് ലോജിക് അതുപോലെ തന്നെ)
     const currentMonth = dateKey.substring(0, 7); 
     const now = new Date();
     const todayDateStr = format(now, 'yyyy-MM-dd');
@@ -147,36 +146,80 @@ export default function StaffDashboard() {
   return (
     <div className="relative space-y-6 max-w-5xl mx-auto pb-10 px-4">
       
-      {/* --- CINEMATIC DIRECTOR'S CUT MODAL 🎬 --- */}
+      {/* --- DEVELOPER 3D GLASS CARD MODAL 🛡️ --- */}
       <AnimatePresence>
-        {showDirectorCut && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5 }}
-            className="fixed inset-0 bg-black/95 backdrop-blur-md flex items-center justify-center z-[9999]"
-            onClick={() => setShowDirectorCut(false)}
-          >
-            <button 
-              onClick={() => setShowDirectorCut(false)}
-              className="absolute top-6 right-6 z-50 p-3 bg-white/10 hover:bg-white/20 rounded-full text-white transition-all"
-            >
-              <X size={24} />
-            </button>
+        {showDevCard && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ perspective: '1000px' }}>
             <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }} transition={{ delay: 0.2 }}
-              className="w-full max-w-5xl aspect-video bg-black rounded-2xl overflow-hidden shadow-[0_0_100px_rgba(34,211,238,0.2)] border border-white/10 relative"
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+              onClick={() => setShowDevCard(false)}
+            />
+            
+            <motion.div
+              initial={{ rotateX: 20, rotateY: -20, scale: 0.8, opacity: 0 }}
+              animate={{ rotateX: 0, rotateY: 0, scale: 1, opacity: 1 }}
+              exit={{ rotateX: -20, rotateY: 20, scale: 0.8, opacity: 0 }}
+              transition={{ type: "spring", damping: 15, stiffness: 100 }}
+              className="relative w-full max-w-sm rounded-3xl overflow-hidden shadow-[0_20px_50px_rgba(34,211,238,0.2)] border border-white/20"
+              style={{
+                background: 'linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.02) 100%)',
+                backdropFilter: 'blur(20px)'
+              }}
               onClick={(e) => e.stopPropagation()}
             >
-              {/* വീഡിയോ ലിങ്ക് ഇവിടെ കൊടുക്കുക 👇 */}
-              <video 
-                src="https://www.w3schools.com/html/mov_bbb.mp4" /* YOUR_VIDEO_LINK_HERE */
-                autoPlay controls controlsList="nodownload" className="w-full h-full object-cover"
-              />
-              <div className="absolute top-4 left-4 bg-black/50 backdrop-blur px-3 py-1 rounded-full border border-white/10 flex items-center gap-2">
-                <Code size={14} className="text-cyan-400" />
-                <span className="text-[10px] text-white font-mono uppercase tracking-widest">Director's Cut</span>
+              {/* Card Header */}
+              <div className="p-6 pb-0 flex justify-between items-start relative z-10">
+                <div className="w-12 h-12 bg-cyan-500/20 rounded-full flex items-center justify-center border border-cyan-500/50">
+                  <Code size={24} className="text-cyan-400" />
+                </div>
+                <button onClick={() => setShowDevCard(false)} className="text-white/50 hover:text-white transition-colors bg-black/20 p-2 rounded-full">
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Background Glow */}
+              <div className="absolute -top-20 -right-20 w-40 h-40 bg-cyan-500/30 rounded-full blur-[50px] -z-10" />
+              <div className="absolute -bottom-20 -left-20 w-40 h-40 bg-violet-500/30 rounded-full blur-[50px] -z-10" />
+
+              {/* Content */}
+              <div className="p-6 relative z-10">
+                <h3 className="text-[10px] font-mono text-cyan-400 uppercase tracking-widest mb-1">System Architect</h3>
+                <h2 className="text-3xl font-bold text-white mb-6">Jaison Pious</h2>
+
+                <div className="space-y-4">
+                  <div className="bg-black/20 rounded-xl p-3 border border-white/5 flex items-center gap-3">
+                    <Clock className="text-violet-400" size={18} />
+                    <div>
+                      <p className="text-[10px] text-text-muted font-bold uppercase tracking-wider">Development Time</p>
+                      <p className="text-sm text-text-bright font-mono mt-0.5">120+ Hours Coded</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-black/20 rounded-xl p-3 border border-white/5 flex items-center gap-3">
+                    <Layers className="text-emerald-400" size={18} />
+                    <div>
+                      <p className="text-[10px] text-text-muted font-bold uppercase tracking-wider">Core Technology Stack</p>
+                      <p className="text-xs text-text-bright mt-0.5 leading-snug">React 18 • Framer Motion • Tailwind CSS</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-black/20 rounded-xl p-3 border border-white/5 flex items-center gap-3">
+                    <Database className="text-amber-400" size={18} />
+                    <div>
+                      <p className="text-[10px] text-text-muted font-bold uppercase tracking-wider">Cloud Infrastructure</p>
+                      <p className="text-xs text-text-bright mt-0.5">Google Firebase Firestore & Auth</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-8 pt-4 border-t border-white/10 flex justify-between items-center">
+                  <span className="text-[10px] text-text-muted font-mono">STATUS: <span className="text-emerald-400">ONLINE</span></span>
+                  <span className="text-[10px] text-text-muted font-mono">V 2.1.0</span>
+                </div>
               </div>
             </motion.div>
-          </motion.div>
+          </div>
         )}
       </AnimatePresence>
 
@@ -292,21 +335,16 @@ export default function StaffDashboard() {
         <AttendanceTable records={records.slice(0, 5)} />
       </div>
 
-      {/* --- DEVELOPER SIGNATURE (Click to play mass video!) --- */}
+      {/* --- DEVELOPER SIGNATURE BADGE (The Premium Watermark) 🛡️ --- */}
       <div className="pt-8 pb-4 flex justify-center">
         <button 
-          onClick={() => setShowDirectorCut(true)}
-          className="group flex flex-col items-center gap-2 opacity-50 hover:opacity-100 transition-all duration-500"
+          onClick={() => setShowDevCard(true)}
+          className="group relative flex items-center gap-2 px-5 py-2 rounded-full bg-white/5 border border-white/5 hover:border-cyan-500/40 hover:bg-cyan-500/10 hover:shadow-[0_0_20px_rgba(34,211,238,0.2)] transition-all duration-300"
         >
-          <div className="flex items-center gap-2 text-[10px] font-mono text-text-muted uppercase tracking-[0.2em]">
-            <span>System Architect</span>
-            <div className="w-1 h-1 rounded-full bg-cyan-400 group-hover:animate-ping" />
-            <span className="text-cyan-400 font-bold">Jaison Pious</span>
-          </div>
-          <div className="flex items-center gap-1.5 text-[8px] bg-white/5 px-3 py-1 rounded-full border border-white/10 group-hover:border-cyan-500/30 group-hover:bg-cyan-500/10 transition-all">
-            <Play size={8} className="text-cyan-400 fill-cyan-400" />
-            <span className="text-white">Click for Director's Cut</span>
-          </div>
+          <Code size={14} className="text-text-muted group-hover:text-cyan-400 transition-colors" />
+          <span className="text-[10px] font-mono text-text-muted tracking-widest group-hover:text-white transition-colors">
+            CRAFTED WITH <span className="text-yellow-400 group-hover:animate-pulse">⚡</span> BY JAISON PIOUS
+          </span>
         </button>
       </div>
 
