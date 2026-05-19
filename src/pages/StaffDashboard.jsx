@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  CheckCircle, XCircle, Clock, TrendingUp, Calendar, MapPin, Zap, FileText, Info, Trophy, Award, QrCode, RefreshCcw, IdCard, X, Play, Code, Database, Layers, Cpu, Star, Heart, ThumbsUp, Send
+  CheckCircle, XCircle, Clock, TrendingUp, Calendar, MapPin, Zap, FileText, Info, Trophy, Award, QrCode, RefreshCcw, IdCard, X, Play, Code, Database, Layers, Cpu, Star, Heart, ThumbsUp, Send, Terminal
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -32,6 +32,7 @@ export default function StaffDashboard() {
   const [stats, setStats] = useState({ total: 0, present: 0, absent: 0, late: 0, percentage: 0 });
   const [loading, setLoading] = useState(true);
 
+  // --- MODALS & EASTER EGGS 🛡️ ---
   const [showWelcomePoster, setShowWelcomePoster] = useState(false);
   const [isIdFlipped, setIsIdFlipped] = useState(false);
   const [showDevCard, setShowDevCard] = useState(false);
@@ -44,8 +45,8 @@ export default function StaffDashboard() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        // Cinematic Loader Delay
-        const minLoadTime = new Promise(resolve => setTimeout(resolve, 2500));
+        // 🎬 Cinematic Loader Delay
+        const minLoadTime = new Promise(resolve => setTimeout(resolve, 2800));
 
         const [today, all, _] = await Promise.all([
           getTodayAttendance(user.uid, dateKey),
@@ -79,7 +80,7 @@ export default function StaffDashboard() {
 
     const hasSeenPoster = sessionStorage.getItem('seenChallengePoster');
     if (!hasSeenPoster) {
-      setTimeout(() => setShowWelcomePoster(true), 3000); 
+      setTimeout(() => setShowWelcomePoster(true), 3500); 
       sessionStorage.setItem('seenChallengePoster', 'true');
     }
 
@@ -100,7 +101,7 @@ export default function StaffDashboard() {
     return allUsers.find(u => u.uid === user.uid) || user;
   }, [allUsers, user]);
 
-  // --- SMART LEADERBOARD (9 PM Overtime & 5:30 PM Penalty Logic) ---
+  // --- 🏆 SMART LEADERBOARD (9 PM Overtime & 5:30 PM Penalty Logic) ---
   const leaderboard = useMemo(() => {
     const currentMonth = dateKey.substring(0, 7); 
     const now = new Date();
@@ -181,6 +182,7 @@ export default function StaffDashboard() {
     return monthStats.sort((a, b) => b.totalSecs - a.totalSecs).slice(0, 3);
   }, [allRecords, allUsers, dateKey]);
 
+  // --- 👏 SEND KUDOS LOGIC ---
   const handleSendKudos = async (e) => {
     e.preventDefault();
     if (!kudosForm.receiverId || !kudosForm.message) return;
@@ -202,27 +204,44 @@ export default function StaffDashboard() {
     setIsSendingKudos(false);
   };
 
-  // --- 🎬 CINEMATIC LOADING INTRO ---
+  // --- 🎬 MOBILE RESPONSIVE LOADING INTRO ---
   if (loading) {
     return (
       <AnimatePresence mode="wait">
         <motion.div 
           key="cinematic-intro"
-          initial={{ opacity: 1 }} exit={{ opacity: 0, scale: 1.1, filter: "blur(10px)" }} transition={{ duration: 0.8, ease: "easeInOut" }}
-          className="fixed inset-0 z-[99999] bg-[#020617] flex flex-col items-center justify-center overflow-hidden"
+          initial={{ opacity: 1 }} exit={{ opacity: 0, scale: 1.05, filter: "blur(10px)" }} transition={{ duration: 0.8, ease: "easeInOut" }}
+          className="fixed inset-0 z-[99999] bg-[#020617] flex flex-col items-center justify-center overflow-hidden px-4"
         >
           <div className="absolute inset-0 flex items-center justify-center">
-             <div className="w-[300px] h-[300px] bg-cyan-500/10 blur-[100px] rounded-full animate-pulse" />
+             <div className="w-[200px] h-[200px] md:w-[400px] md:h-[400px] bg-cyan-500/10 blur-[80px] md:blur-[120px] rounded-full animate-pulse" />
           </div>
-          <motion.div initial={{ scale: 0.9, opacity: 0, filter: "blur(10px)" }} animate={{ scale: 1, opacity: 1, filter: "blur(0px)" }} transition={{ duration: 1, ease: "easeOut" }} className="z-10 flex flex-col items-center">
-            <div className="flex items-center gap-4 mb-2">
-              <div className="w-12 h-12 bg-gradient-to-tr from-cyan-500 to-violet-500 rounded-xl flex items-center justify-center shadow-[0_0_30px_rgba(34,211,238,0.4)]"><span className="text-white font-black text-2xl">N</span></div>
-              <h1 className="text-5xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white to-white/70 tracking-widest">NEXORA</h1>
+          
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0, filter: "blur(10px)" }} animate={{ scale: 1, opacity: 1, filter: "blur(0px)" }} transition={{ duration: 1, ease: "easeOut" }}
+            className="z-10 flex flex-col items-center w-full max-w-sm md:max-w-xl text-center"
+          >
+            <div className="flex items-center justify-center gap-3 md:gap-5 mb-4 w-full">
+              <div className="w-10 h-10 md:w-14 md:h-14 bg-gradient-to-tr from-cyan-500 to-violet-500 rounded-lg md:rounded-xl flex items-center justify-center shadow-[0_0_30px_rgba(34,211,238,0.4)] flex-shrink-0">
+                <span className="text-white font-black text-xl md:text-2xl">N</span>
+              </div>
+              <h1 className="text-3xl sm:text-4xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white to-white/70 tracking-widest whitespace-nowrap">
+                NEXORA SM
+              </h1>
             </div>
-            <motion.div initial={{ width: 0 }} animate={{ width: "100%" }} transition={{ duration: 1.5, delay: 0.5, ease: "easeInOut" }} className="h-[2px] bg-gradient-to-r from-transparent via-cyan-500 to-transparent w-full mt-4" />
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1, duration: 1 }} className="mt-8 flex flex-col items-center gap-3">
-               <div className="flex gap-2">{[0,1,2].map(i => <motion.div key={i} animate={{ opacity: [0,1,0] }} transition={{ repeat: Infinity, duration: 1.5, delay: i * 0.2 }} className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />)}</div>
-               <p className="text-cyan-400 font-mono text-[10px] uppercase tracking-[0.3em] animate-pulse">Authenticating Workspace...</p>
+            
+            <motion.div 
+              initial={{ width: 0 }} animate={{ width: "100%" }} transition={{ duration: 1.8, delay: 0.4, ease: "easeInOut" }}
+              className="h-[1px] md:h-[2px] bg-gradient-to-r from-transparent via-cyan-500 to-transparent w-full mt-2 md:mt-4 max-w-[280px] md:max-w-md"
+            />
+            
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1, duration: 1 }} className="mt-8 md:mt-12 flex flex-col items-center gap-4">
+               <div className="flex gap-2">
+                 {[0,1,2].map(i => <motion.div key={i} animate={{ opacity: [0,1,0] }} transition={{ repeat: Infinity, duration: 1.5, delay: i * 0.2 }} className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />)}
+               </div>
+               <p className="text-cyan-400 font-mono text-[9px] md:text-[11px] uppercase tracking-[0.3em] animate-pulse px-2">
+                 Authenticating Workspace...
+               </p>
             </motion.div>
           </motion.div>
         </motion.div>
@@ -237,7 +256,7 @@ export default function StaffDashboard() {
   return (
     <div className="relative space-y-6 max-w-5xl mx-auto pb-10 px-4">
       
-      {/* --- SEND KUDOS MODAL 👏 --- */}
+      {/* --- 👏 SEND KUDOS MODAL --- */}
       <AnimatePresence>
         {showKudosModal && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[999] p-4" onClick={() => setShowKudosModal(false)}>
@@ -276,7 +295,7 @@ export default function StaffDashboard() {
         )}
       </AnimatePresence>
 
-      {/* EASTER EGG SCREEN */}
+      {/* --- 💻 HACKER EASTER EGG SCREEN --- */}
       <AnimatePresence>
         {showMagic && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.5 }} className="fixed inset-0 bg-[#020617] flex flex-col items-center justify-center z-[9999] overflow-hidden">
@@ -301,7 +320,7 @@ export default function StaffDashboard() {
         )}
       </AnimatePresence>
 
-      {/* DEV CARD MODAL */}
+      {/* --- 🛡️ 3D DEV CARD MODAL --- */}
       <AnimatePresence>
         {showDevCard && (
           <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4" style={{ perspective: '1000px' }}>
@@ -321,14 +340,20 @@ export default function StaffDashboard() {
                   <div className="bg-black/20 rounded-xl p-3 border border-white/5 flex items-center gap-3"><Layers className="text-emerald-400" size={18} /><div><p className="text-[10px] text-text-muted font-bold uppercase tracking-wider">Core Technology Stack</p><p className="text-xs text-text-bright mt-0.5 leading-snug">React 18 • Framer Motion • Tailwind CSS</p></div></div>
                   <div className="bg-black/20 rounded-xl p-3 border border-white/5 flex items-center gap-3"><Database className="text-amber-400" size={18} /><div><p className="text-[10px] text-text-muted font-bold uppercase tracking-wider">Cloud Infrastructure</p><p className="text-xs text-text-bright mt-0.5">Google Firebase Firestore & Auth</p></div></div>
                 </div>
-                <div className="mt-8 pt-4 border-t border-white/10 flex justify-between items-center"><span className="text-[10px] text-text-muted font-mono">STATUS: <span className="text-emerald-400">ONLINE</span></span><span className="text-[10px] text-text-muted font-mono">V 2.1.0</span></div>
+                <div className="mt-6 pt-4 border-t border-white/10 flex justify-between items-center">
+                  <span className="text-[10px] text-text-muted font-mono">STATUS: <span className="text-emerald-400">ONLINE</span></span>
+                  {/* --- ACCESS MAINFRAME BUTTON RESTORED --- */}
+                  <button onClick={() => { setShowDevCard(false); setShowMagic(true); }} className="flex items-center gap-1.5 px-3 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-full border border-rose-500/20 transition-colors">
+                    <Terminal size={12} /><span className="text-[9px] font-bold uppercase tracking-widest">Access Mainframe</span>
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
 
-      {/* Welcome Poster Modal */}
+      {/* --- WELCOME POSTER MODAL --- */}
       <AnimatePresence>
         {showWelcomePoster && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[999] p-4" onClick={closeWelcomePoster}>
@@ -340,7 +365,7 @@ export default function StaffDashboard() {
         )}
       </AnimatePresence>
 
-      {/* Header */}
+      {/* --- DASHBOARD HEADER --- */}
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -371,7 +396,7 @@ export default function StaffDashboard() {
           <div className="h-2 bg-border/60 rounded-full overflow-hidden"><motion.div initial={{ width: 0 }} animate={{ width: `${stats.percentage}%` }} className="h-full bg-gradient-to-r from-cyan-500 to-violet-500" /></div>
         </div>
 
-        {/* Digital ID */}
+        {/* --- DIGITAL ID CARD --- */}
         <div className="md:col-span-1 relative h-[140px] md:h-auto">
           <div className="glass w-full h-full rounded-2xl relative overflow-hidden cursor-pointer group shadow-xl border border-cyan-500/30" onClick={() => setIsIdFlipped(!isIdFlipped)}>
             <AnimatePresence mode="wait">
@@ -401,9 +426,12 @@ export default function StaffDashboard() {
           </div>
         </div>
 
-        {/* Action Buttons (Leave & Kudos) */}
+        {/* --- ACTION BUTTONS (Leave & Kudos) --- */}
         <div className="md:col-span-1 flex flex-col gap-3">
-          <Link to="/leave-request" className="glass flex-1 rounded-2xl p-3 flex flex-col justify-center items-center gap-1 hover:bg-white/5 border border-violet-500/20 transition-all group"><FileText className="text-violet-400" size={20} /><span className="text-xs font-bold text-text-bright">Apply Leave</span></Link>
+          <Link to="/leave-request" className="glass flex-1 rounded-2xl p-3 flex flex-col justify-center items-center gap-1 hover:bg-white/5 border border-violet-500/20 transition-all group">
+            <FileText className="text-violet-400" size={20} />
+            <span className="text-xs font-bold text-text-bright">Apply Leave</span>
+          </Link>
           <button onClick={() => setShowKudosModal(true)} className="bg-gradient-to-r from-yellow-500/20 to-amber-500/20 flex-1 rounded-2xl p-3 flex flex-col justify-center items-center gap-1 hover:from-yellow-500/30 hover:to-amber-500/30 border border-yellow-500/30 transition-all group">
             <Star className="text-yellow-400" size={20} />
             <span className="text-xs font-bold text-yellow-400">Send Kudos</span>
@@ -434,7 +462,7 @@ export default function StaffDashboard() {
         </motion.div>
       )}
 
-      {/* Leaderboard */}
+      {/* --- LEADERBOARD --- */}
       {leaderboard.length > 0 && (
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-3xl p-6 border border-yellow-500/20 bg-yellow-500/5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-5 gap-2">
@@ -462,7 +490,7 @@ export default function StaffDashboard() {
         </motion.div>
       )}
 
-      {/* Leave Status Display */}
+      {/* --- LEAVE STATUS --- */}
       <AnimatePresence>
         {myLeaves.length > 0 && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-2xl p-5 border border-white/5">
@@ -487,6 +515,7 @@ export default function StaffDashboard() {
         <AttendanceTable records={records.slice(0, 5)} />
       </div>
 
+      {/* --- 🛡️ DEVELOPER SIGNATURE BADGE --- */}
       <div className="pt-8 pb-4 flex justify-center">
         <button onClick={() => setShowDevCard(true)} className="group relative flex items-center gap-2 px-5 py-2 rounded-full bg-white/5 border border-white/5 hover:border-cyan-500/40 hover:bg-cyan-500/10 hover:shadow-[0_0_20px_rgba(34,211,238,0.2)] transition-all duration-300">
           <Code size={14} className="text-text-muted group-hover:text-cyan-400 transition-colors" />
