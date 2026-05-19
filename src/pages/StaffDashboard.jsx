@@ -13,7 +13,6 @@ import { format } from 'date-fns';
 import MarkAttendance from '../components/attendance/MarkAttendance';
 import StatCard from '../components/ui/StatCard';
 import StatusBadge from '../components/ui/StatusBadge';
-import Loader from '../components/ui/Loader';
 import AttendanceTable from '../components/attendance/AttendanceTable';
 import welcomePoster from '../assets/poster.jpg'; 
 
@@ -45,9 +44,13 @@ export default function StaffDashboard() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [today, all] = await Promise.all([
+        // ഇൻട്രോ ശരിക്ക് കാണാൻ വേണ്ടി ഒരു 2.5 സെക്കൻഡ് ഡിലേ കൊടുക്കുന്നു (Cinematic Effect)
+        const minLoadTime = new Promise(resolve => setTimeout(resolve, 2500));
+
+        const [today, all, _] = await Promise.all([
           getTodayAttendance(user.uid, dateKey),
           getUserAttendance(user.uid),
+          minLoadTime // ഡാറ്റ ലോഡ് ആയാലും ഇൻട്രോ തീരുന്നത് വരെ കാത്തിരിക്കും
         ]);
         setTodayRecord(today);
         setRecords(all);
@@ -68,7 +71,6 @@ export default function StaffDashboard() {
       setMyLeaves(leaveList.sort((a, b) => b.createdAt?.seconds - a.createdAt?.seconds));
     });
 
-    // Fetch Kudos Received by this user
     const qKudos = query(collection(db, 'kudos'), where('receiverId', '==', user.uid));
     const unsubKudos = onSnapshot(qKudos, (snapshot) => {
       const kList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -77,7 +79,8 @@ export default function StaffDashboard() {
 
     const hasSeenPoster = sessionStorage.getItem('seenChallengePoster');
     if (!hasSeenPoster) {
-      setTimeout(() => setShowWelcomePoster(true), 500); 
+      // ഇൻട്രോ തീർന്ന ശേഷം പോസ്റ്റർ വരാൻ ഡിലേ മാറ്റി 3 സെക്കൻഡ് ആക്കി
+      setTimeout(() => setShowWelcomePoster(true), 3000); 
       sessionStorage.setItem('seenChallengePoster', 'true');
     }
 
@@ -163,22 +166,15 @@ export default function StaffDashboard() {
     return monthStats.sort((a, b) => b.totalSecs - a.totalSecs).slice(0, 3);
   }, [allRecords, allUsers, dateKey]);
 
-  // --- SEND KUDOS FUNCTION ---
   const handleSendKudos = async (e) => {
     e.preventDefault();
     if (!kudosForm.receiverId || !kudosForm.message) return;
     setIsSendingKudos(true);
-    
     const receiver = allUsers.find(u => u.uid === kudosForm.receiverId);
     try {
       await addDoc(collection(db, 'kudos'), {
-        senderId: user.uid,
-        senderName: currentUserProfile.name,
-        senderPhoto: currentUserProfile.photoURL || null,
-        receiverId: receiver.uid,
-        receiverName: receiver.name,
-        badge: kudosForm.badge,
-        message: kudosForm.message,
+        senderId: user.uid, senderName: currentUserProfile.name, senderPhoto: currentUserProfile.photoURL || null,
+        receiverId: receiver.uid, receiverName: receiver.name, badge: kudosForm.badge, message: kudosForm.message,
         createdAt: serverTimestamp()
       });
       setShowKudosModal(false);
@@ -191,13 +187,55 @@ export default function StaffDashboard() {
     setIsSendingKudos(false);
   };
 
-  if (loading) return <Loader />;
+  // --- 🎬 CINEMATIC LOADING INTRO ---
+  if (loading) {
+    return (
+      <AnimatePresence mode="wait">
+        <motion.div 
+          key="cinematic-intro"
+          initial={{ opacity: 1 }} exit={{ opacity: 0, scale: 1.1, filter: "blur(10px)" }} transition={{ duration: 0.8, ease: "easeInOut" }}
+          className="fixed inset-0 z-[99999] bg-[#020617] flex flex-col items-center justify-center overflow-hidden"
+        >
+          {/* Glowing Background Blob */}
+          <div className="absolute inset-0 flex items-center justify-center">
+             <div className="w-[300px] h-[300px] bg-cyan-500/10 blur-[100px] rounded-full animate-pulse" />
+          </div>
+          
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0, filter: "blur(10px)" }} animate={{ scale: 1, opacity: 1, filter: "blur(0px)" }} transition={{ duration: 1, ease: "easeOut" }}
+            className="z-10 flex flex-col items-center"
+          >
+            {/* Logo & Name */}
+            <div className="flex items-center gap-4 mb-2">
+              <div className="w-12 h-12 bg-gradient-to-tr from-cyan-500 to-violet-500 rounded-xl flex items-center justify-center shadow-[0_0_30px_rgba(34,211,238,0.4)]">
+                <span className="text-white font-black text-2xl">N</span>
+              </div>
+              <h1 className="text-5xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white to-white/70 tracking-widest">
+                NEXORA
+              </h1>
+            </div>
+            
+            {/* Animated Laser Line */}
+            <motion.div 
+              initial={{ width: 0 }} animate={{ width: "100%" }} transition={{ duration: 1.5, delay: 0.5, ease: "easeInOut" }}
+              className="h-[2px] bg-gradient-to-r from-transparent via-cyan-500 to-transparent w-full mt-4"
+            />
+            
+            {/* Loading text with blinking dots */}
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1, duration: 1 }} className="mt-8 flex flex-col items-center gap-3">
+               <div className="flex gap-2">
+                 {[0,1,2].map(i => <motion.div key={i} animate={{ opacity: [0,1,0] }} transition={{ repeat: Infinity, duration: 1.5, delay: i * 0.2 }} className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />)}
+               </div>
+               <p className="text-cyan-400 font-mono text-[10px] uppercase tracking-[0.3em] animate-pulse">Authenticating Workspace...</p>
+            </motion.div>
+          </motion.div>
+        </motion.div>
+      </AnimatePresence>
+    );
+  }
 
   const terminalLines = [
-    "> INITIATING SYSTEM OVERRIDE...",
-    "> BYPASSING SECURITY PROTOCOLS...",
-    "> DECRYPTING NEXORA MAINFRAME...",
-    "> ACCESS GRANTED."
+    "> INITIATING SYSTEM OVERRIDE...", "> BYPASSING SECURITY PROTOCOLS...", "> DECRYPTING NEXORA MAINFRAME...", "> ACCESS GRANTED."
   ];
 
   return (
@@ -246,7 +284,7 @@ export default function StaffDashboard() {
                   />
                 </div>
                 <button disabled={isSendingKudos} type="submit" className="w-full bg-gradient-to-r from-cyan-500 to-violet-500 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">
-                  {isSendingKudos ? <Loader size={16} /> : <><Send size={18} /> Send Appreciation</>}
+                  {isSendingKudos ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <><Send size={18} /> Send Appreciation</>}
                 </button>
               </form>
             </motion.div>
