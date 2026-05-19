@@ -44,13 +44,13 @@ export default function StaffDashboard() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        // ഇൻട്രോ ശരിക്ക് കാണാൻ വേണ്ടി ഒരു 2.5 സെക്കൻഡ് ഡിലേ കൊടുക്കുന്നു (Cinematic Effect)
+        // Cinematic Loader Delay
         const minLoadTime = new Promise(resolve => setTimeout(resolve, 2500));
 
         const [today, all, _] = await Promise.all([
           getTodayAttendance(user.uid, dateKey),
           getUserAttendance(user.uid),
-          minLoadTime // ഡാറ്റ ലോഡ് ആയാലും ഇൻട്രോ തീരുന്നത് വരെ കാത്തിരിക്കും
+          minLoadTime
         ]);
         setTodayRecord(today);
         setRecords(all);
@@ -79,7 +79,6 @@ export default function StaffDashboard() {
 
     const hasSeenPoster = sessionStorage.getItem('seenChallengePoster');
     if (!hasSeenPoster) {
-      // ഇൻട്രോ തീർന്ന ശേഷം പോസ്റ്റർ വരാൻ ഡിലേ മാറ്റി 3 സെക്കൻഡ് ആക്കി
       setTimeout(() => setShowWelcomePoster(true), 3000); 
       sessionStorage.setItem('seenChallengePoster', 'true');
     }
@@ -101,6 +100,7 @@ export default function StaffDashboard() {
     return allUsers.find(u => u.uid === user.uid) || user;
   }, [allUsers, user]);
 
+  // --- SMART LEADERBOARD (9 PM Overtime & 5:30 PM Penalty Logic) ---
   const leaderboard = useMemo(() => {
     const currentMonth = dateKey.substring(0, 7); 
     const now = new Date();
@@ -146,7 +146,22 @@ export default function StaffDashboard() {
         const outVal = getOutTime(r);
         let outSec = parseTime(outVal);
         const isWorking = !outVal || String(outVal).toLowerCase().includes('work');
-        if (isWorking) { outSec = (r.date === todayDateStr) ? currentSecs : 18 * 3600; }
+        
+        // 🛑 NEW PENALTY & OVERTIME LOGIC 🛑
+        if (isWorking) { 
+           if (r.date === todayDateStr) {
+               // ഇന്നത്തെ ദിവസമാണെങ്കിൽ 9 PM (21:00) വരെ സമയം കൊടുക്കും
+               if (currentSecs < 21 * 3600) {
+                   outSec = currentSecs; 
+               } else {
+                   // 9 PM കഴിഞ്ഞിട്ടും പഞ്ച് ഔട്ട് ചെയ്തില്ലെങ്കിൽ പെനാൽറ്റി: 5:30 PM (17.5 hours)
+                   outSec = 17.5 * 3600; 
+               }
+           } else {
+               // പഴയ ദിവസങ്ങളിൽ പഞ്ച് ഔട്ട് ചെയ്യാൻ മറന്നവർക്ക് പെനാൽറ്റി: 5:30 PM
+               outSec = 17.5 * 3600; 
+           }
+        }
 
         if (outSec !== null) {
           let diff = outSec - inSec;
@@ -196,36 +211,17 @@ export default function StaffDashboard() {
           initial={{ opacity: 1 }} exit={{ opacity: 0, scale: 1.1, filter: "blur(10px)" }} transition={{ duration: 0.8, ease: "easeInOut" }}
           className="fixed inset-0 z-[99999] bg-[#020617] flex flex-col items-center justify-center overflow-hidden"
         >
-          {/* Glowing Background Blob */}
           <div className="absolute inset-0 flex items-center justify-center">
              <div className="w-[300px] h-[300px] bg-cyan-500/10 blur-[100px] rounded-full animate-pulse" />
           </div>
-          
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0, filter: "blur(10px)" }} animate={{ scale: 1, opacity: 1, filter: "blur(0px)" }} transition={{ duration: 1, ease: "easeOut" }}
-            className="z-10 flex flex-col items-center"
-          >
-            {/* Logo & Name */}
+          <motion.div initial={{ scale: 0.9, opacity: 0, filter: "blur(10px)" }} animate={{ scale: 1, opacity: 1, filter: "blur(0px)" }} transition={{ duration: 1, ease: "easeOut" }} className="z-10 flex flex-col items-center">
             <div className="flex items-center gap-4 mb-2">
-              <div className="w-12 h-12 bg-gradient-to-tr from-cyan-500 to-violet-500 rounded-xl flex items-center justify-center shadow-[0_0_30px_rgba(34,211,238,0.4)]">
-                <span className="text-white font-black text-2xl">N</span>
-              </div>
-              <h1 className="text-5xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white to-white/70 tracking-widest">
-                NEXORA
-              </h1>
+              <div className="w-12 h-12 bg-gradient-to-tr from-cyan-500 to-violet-500 rounded-xl flex items-center justify-center shadow-[0_0_30px_rgba(34,211,238,0.4)]"><span className="text-white font-black text-2xl">N</span></div>
+              <h1 className="text-5xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white to-white/70 tracking-widest">NEXORA</h1>
             </div>
-            
-            {/* Animated Laser Line */}
-            <motion.div 
-              initial={{ width: 0 }} animate={{ width: "100%" }} transition={{ duration: 1.5, delay: 0.5, ease: "easeInOut" }}
-              className="h-[2px] bg-gradient-to-r from-transparent via-cyan-500 to-transparent w-full mt-4"
-            />
-            
-            {/* Loading text with blinking dots */}
+            <motion.div initial={{ width: 0 }} animate={{ width: "100%" }} transition={{ duration: 1.5, delay: 0.5, ease: "easeInOut" }} className="h-[2px] bg-gradient-to-r from-transparent via-cyan-500 to-transparent w-full mt-4" />
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1, duration: 1 }} className="mt-8 flex flex-col items-center gap-3">
-               <div className="flex gap-2">
-                 {[0,1,2].map(i => <motion.div key={i} animate={{ opacity: [0,1,0] }} transition={{ repeat: Infinity, duration: 1.5, delay: i * 0.2 }} className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />)}
-               </div>
+               <div className="flex gap-2">{[0,1,2].map(i => <motion.div key={i} animate={{ opacity: [0,1,0] }} transition={{ repeat: Infinity, duration: 1.5, delay: i * 0.2 }} className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />)}</div>
                <p className="text-cyan-400 font-mono text-[10px] uppercase tracking-[0.3em] animate-pulse">Authenticating Workspace...</p>
             </motion.div>
           </motion.div>
@@ -253,22 +249,14 @@ export default function StaffDashboard() {
               <form onSubmit={handleSendKudos} className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-cyan-400 mb-1">Select Colleague</label>
-                  <select 
-                    required value={kudosForm.receiverId} onChange={(e) => setKudosForm({...kudosForm, receiverId: e.target.value})}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white focus:border-cyan-500 outline-none"
-                  >
+                  <select required value={kudosForm.receiverId} onChange={(e) => setKudosForm({...kudosForm, receiverId: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white focus:border-cyan-500 outline-none">
                     <option value="" className="bg-slate-900">Choose a team member...</option>
-                    {allUsers.filter(u => u.uid !== user.uid).map(u => (
-                      <option key={u.uid} value={u.uid} className="bg-slate-900">{u.name}</option>
-                    ))}
+                    {allUsers.filter(u => u.uid !== user.uid).map(u => (<option key={u.uid} value={u.uid} className="bg-slate-900">{u.name}</option>))}
                   </select>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-cyan-400 mb-1">Select Badge</label>
-                  <select 
-                    value={kudosForm.badge} onChange={(e) => setKudosForm({...kudosForm, badge: e.target.value})}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white focus:border-cyan-500 outline-none"
-                  >
+                  <select value={kudosForm.badge} onChange={(e) => setKudosForm({...kudosForm, badge: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white focus:border-cyan-500 outline-none">
                     <option className="bg-slate-900">🌟 Star Performer</option>
                     <option className="bg-slate-900">🤝 Team Player</option>
                     <option className="bg-slate-900">🦸 Helping Hand</option>
@@ -277,11 +265,7 @@ export default function StaffDashboard() {
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-cyan-400 mb-1">Message</label>
-                  <textarea 
-                    required placeholder="Write a short appreciation message..." rows="3"
-                    value={kudosForm.message} onChange={(e) => setKudosForm({...kudosForm, message: e.target.value})}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white focus:border-cyan-500 outline-none resize-none"
-                  />
+                  <textarea required placeholder="Write a short appreciation message..." rows="3" value={kudosForm.message} onChange={(e) => setKudosForm({...kudosForm, message: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white focus:border-cyan-500 outline-none resize-none" />
                 </div>
                 <button disabled={isSendingKudos} type="submit" className="w-full bg-gradient-to-r from-cyan-500 to-violet-500 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">
                   {isSendingKudos ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <><Send size={18} /> Send Appreciation</>}
@@ -427,7 +411,7 @@ export default function StaffDashboard() {
         </div>
       </div>
 
-      {/* --- KUDOS WALL (APPRECIATION FEED) 👏 --- */}
+      {/* --- KUDOS WALL --- */}
       {myKudos.length > 0 && (
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-3xl p-6 border border-emerald-500/20 bg-emerald-500/5">
           <div className="flex items-center gap-2 mb-4">
