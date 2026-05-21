@@ -42,11 +42,21 @@ export default function StaffDashboard() {
   const [allRecords, setAllRecords] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
 
+  // --- 🔊 PLAY BOOT-UP SOUND ---
+  useEffect(() => {
+    if (loading) {
+      // Sci-Fi Scanning Sound Effect
+      const bootSound = new Audio('https://assets.mixkit.co/active_storage/sfx/2578/2578-preview.mp3');
+      bootSound.volume = 0.5; // Volume set to 50%
+      bootSound.play().catch(err => console.log("Audio autoplay prevented by browser (needs user click first):", err));
+    }
+  }, [loading]);
+
   useEffect(() => {
     const loadData = async () => {
       try {
-        // 🎬 Cinematic Loader Delay
-        const minLoadTime = new Promise(resolve => setTimeout(resolve, 2800));
+        // 🎬 Cinematic Loader Delay (3.8s)
+        const minLoadTime = new Promise(resolve => setTimeout(resolve, 3800));
 
         const [today, all, _] = await Promise.all([
           getTodayAttendance(user.uid, dateKey),
@@ -78,9 +88,8 @@ export default function StaffDashboard() {
       setMyKudos(kList.sort((a, b) => b.createdAt?.seconds - a.createdAt?.seconds));
     });
 
-    const hasSeenPoster = sessionStorage.getItem('seenChallengePoster');
-    if (!hasSeenPoster) {
-      setTimeout(() => setShowWelcomePoster(true), 3500); 
+    if (!sessionStorage.getItem('seenChallengePoster')) {
+      setTimeout(() => setShowWelcomePoster(true), 4500); 
       sessionStorage.setItem('seenChallengePoster', 'true');
     }
 
@@ -108,8 +117,8 @@ export default function StaffDashboard() {
     const todayDateStr = format(now, 'yyyy-MM-dd');
     const currentSecs = (now.getHours() * 3600) + (now.getMinutes() * 60);
 
-    const getInTime = (r) => r?.punchIn || r?.checkIn || r?.timeIn || r?.inTime || r?.createdAt || null;
-    const getOutTime = (r) => r?.punchOut || r?.checkOut || r?.timeOut || r?.outTime || null;
+    const getInTime = (r) => r?.punchIn || r?.checkIn || r?.timeIn || r?.inTime || r?.time || r?.createdAt || null;
+    const getOutTime = (r) => r?.punchOut || r?.punchOutTime || r?.checkOut || r?.timeOut || r?.outTime || null;
 
     const parseTime = (timeStr) => {
       if (!timeStr) return null;
@@ -151,15 +160,12 @@ export default function StaffDashboard() {
         // 🛑 NEW PENALTY & OVERTIME LOGIC 🛑
         if (isWorking) { 
            if (r.date === todayDateStr) {
-               // ഇന്നത്തെ ദിവസമാണെങ്കിൽ 9 PM (21:00) വരെ സമയം കൊടുക്കും
                if (currentSecs < 21 * 3600) {
                    outSec = currentSecs; 
                } else {
-                   // 9 PM കഴിഞ്ഞിട്ടും പഞ്ച് ഔട്ട് ചെയ്തില്ലെങ്കിൽ പെനാൽറ്റി: 5:30 PM (17.5 hours)
                    outSec = 17.5 * 3600; 
                }
            } else {
-               // പഴയ ദിവസങ്ങളിൽ പഞ്ച് ഔട്ട് ചെയ്യാൻ മറന്നവർക്ക് പെനാൽറ്റി: 5:30 PM
                outSec = 17.5 * 3600; 
            }
         }
@@ -204,46 +210,60 @@ export default function StaffDashboard() {
     setIsSendingKudos(false);
   };
 
-  // --- 🎬 MOBILE RESPONSIVE LOADING INTRO ---
+  // --- 🎬 HOLLYWOOD STYLE CREATOR INTRO ---
   if (loading) {
     return (
       <AnimatePresence mode="wait">
         <motion.div 
           key="cinematic-intro"
-          initial={{ opacity: 1 }} exit={{ opacity: 0, scale: 1.05, filter: "blur(10px)" }} transition={{ duration: 0.8, ease: "easeInOut" }}
+          initial={{ opacity: 1 }} exit={{ opacity: 0, scale: 1.1, filter: "blur(10px)" }} transition={{ duration: 0.8, ease: "easeInOut" }}
           className="fixed inset-0 z-[99999] bg-[#020617] flex flex-col items-center justify-center overflow-hidden px-4"
         >
+          {/* Background Ambient Glow */}
           <div className="absolute inset-0 flex items-center justify-center">
-             <div className="w-[200px] h-[200px] md:w-[400px] md:h-[400px] bg-cyan-500/10 blur-[80px] md:blur-[120px] rounded-full animate-pulse" />
+             <div className="w-[200px] h-[200px] md:w-[400px] md:h-[400px] bg-cyan-500/10 blur-[100px] md:blur-[150px] rounded-full animate-pulse" />
           </div>
           
-          <motion.div
-            initial={{ scale: 0.9, opacity: 0, filter: "blur(10px)" }} animate={{ scale: 1, opacity: 1, filter: "blur(0px)" }} transition={{ duration: 1, ease: "easeOut" }}
-            className="z-10 flex flex-col items-center w-full max-w-sm md:max-w-xl text-center"
-          >
-            <div className="flex items-center justify-center gap-3 md:gap-5 mb-4 w-full">
-              <div className="w-10 h-10 md:w-14 md:h-14 bg-gradient-to-tr from-cyan-500 to-violet-500 rounded-lg md:rounded-xl flex items-center justify-center shadow-[0_0_30px_rgba(34,211,238,0.4)] flex-shrink-0">
-                <span className="text-white font-black text-xl md:text-2xl">N</span>
-              </div>
-              <h1 className="text-3xl sm:text-4xl md:text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white to-white/70 tracking-widest whitespace-nowrap">
-                NEXORA SM
-              </h1>
-            </div>
+          <div className="z-10 flex flex-col items-center w-full max-w-sm md:max-w-xl text-center">
             
+            {/* Small Intro Text */}
+            <motion.p 
+              initial={{ opacity: 0, y: 10, letterSpacing: "0.1em" }}
+              animate={{ opacity: 1, y: 0, letterSpacing: "0.4em" }}
+              transition={{ duration: 1.2, ease: "easeOut" }}
+              className="text-cyan-500/80 font-mono text-[9px] md:text-[11px] uppercase mb-4 md:mb-6"
+            >
+              Designed & Engineered By
+            </motion.p>
+            
+            {/* BIG CREATOR NAME */}
+            <motion.h1 
+              initial={{ opacity: 0, scale: 0.8, filter: "blur(15px)" }}
+              animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+              transition={{ duration: 1.5, delay: 0.5, ease: "easeOut" }}
+              className="text-4xl sm:text-5xl md:text-7xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-white/90 to-white/20 tracking-tighter drop-shadow-[0_0_20px_rgba(255,255,255,0.2)]"
+            >
+              JAISON PIOUS
+            </motion.h1>
+            
+            {/* Laser Line Separator */}
             <motion.div 
-              initial={{ width: 0 }} animate={{ width: "100%" }} transition={{ duration: 1.8, delay: 0.4, ease: "easeInOut" }}
-              className="h-[1px] md:h-[2px] bg-gradient-to-r from-transparent via-cyan-500 to-transparent w-full mt-2 md:mt-4 max-w-[280px] md:max-w-md"
+              initial={{ width: 0 }} animate={{ width: "100%" }} transition={{ duration: 1.5, delay: 1.5, ease: "easeInOut" }}
+              className="h-[1px] md:h-[2px] bg-gradient-to-r from-transparent via-cyan-500 to-transparent w-full mt-6 md:mt-8 max-w-[200px] md:max-w-[300px]"
             />
             
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1, duration: 1 }} className="mt-8 md:mt-12 flex flex-col items-center gap-4">
-               <div className="flex gap-2">
+            {/* System Initializing Text */}
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 2.2, duration: 1 }} className="mt-6 md:mt-8 flex flex-col items-center gap-3">
+               <p className="text-cyan-400 font-mono text-[9px] md:text-[11px] uppercase tracking-[0.3em] animate-pulse px-2">
+                 Initializing Nexora SM...
+               </p>
+               {/* Blinking Dots */}
+               <div className="flex gap-2 mt-2">
                  {[0,1,2].map(i => <motion.div key={i} animate={{ opacity: [0,1,0] }} transition={{ repeat: Infinity, duration: 1.5, delay: i * 0.2 }} className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />)}
                </div>
-               <p className="text-cyan-400 font-mono text-[9px] md:text-[11px] uppercase tracking-[0.3em] animate-pulse px-2">
-                 Authenticating Workspace...
-               </p>
             </motion.div>
-          </motion.div>
+            
+          </div>
         </motion.div>
       </AnimatePresence>
     );
@@ -342,7 +362,6 @@ export default function StaffDashboard() {
                 </div>
                 <div className="mt-6 pt-4 border-t border-white/10 flex justify-between items-center">
                   <span className="text-[10px] text-text-muted font-mono">STATUS: <span className="text-emerald-400">ONLINE</span></span>
-                  {/* --- ACCESS MAINFRAME BUTTON RESTORED --- */}
                   <button onClick={() => { setShowDevCard(false); setShowMagic(true); }} className="flex items-center gap-1.5 px-3 py-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-full border border-rose-500/20 transition-colors">
                     <Terminal size={12} /><span className="text-[9px] font-bold uppercase tracking-widest">Access Mainframe</span>
                   </button>
