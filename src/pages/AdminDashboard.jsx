@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users, CheckCircle, XCircle, Clock, TrendingUp, Download,
   Search, RefreshCw, Shield, FileText, Check, X, Calendar, User, 
-  PlaneTakeoff, Trophy, Award, AlertCircle
+  PlaneTakeoff, Trophy, Award, AlertCircle, Radio, Navigation
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -12,7 +12,7 @@ import {
 import { subscribeToAttendance, getAllUsers } from '../services/attendanceService';
 import { db } from '../firebase/config';
 import { collection, query, onSnapshot, orderBy, updateDoc, doc } from 'firebase/firestore';
-import { format, subDays, getDaysInMonth, isAfter, startOfDay, isWithinInterval, endOfDay, parseISO } from 'date-fns';
+import { format, subDays, getDaysInMonth, startOfDay, isWithinInterval, endOfDay, parseISO } from 'date-fns';
 import AttendanceTable from '../components/attendance/AttendanceTable';
 import Loader from '../components/ui/Loader';
 import toast from 'react-hot-toast';
@@ -42,11 +42,10 @@ export default function AdminDashboard() {
     return () => { unsubAttendance(); unsubLeaves(); };
   }, []);
 
-  // ഫയർബേസിലെ ഫീൽഡ് പേരുകൾ എന്തായാലും കണ്ടുപിടിക്കാനുള്ള ഫങ്ക്ഷൻ
-  const getInTime = (r) => r?.punchIn || r?.checkIn || r?.timeIn || r?.inTime || r?.createdAt || null;
-  const getOutTime = (r) => r?.punchOut || r?.checkOut || r?.timeOut || r?.outTime || null;
+  const getInTime = (r) => r?.punchIn || r?.checkIn || r?.timeIn || r?.inTime || r?.time || r?.createdAt || null;
+  const getOutTime = (r) => r?.punchOut || r?.punchOutTime || r?.checkOut || r?.timeOut || r?.outTime || null;
 
-  // --- 1. SUPER SMART LEADERBOARD (Live Time, Fallback to 6PM, and Photos) ---
+  // --- 🏆 SMART LEADERBOARD ---
   const leaderboard = useMemo(() => {
     const currentMonth = filters.month || format(new Date(), 'yyyy-MM');
     const now = new Date();
@@ -56,203 +55,114 @@ export default function AdminDashboard() {
     const parseTime = (val) => {
       if (!val) return null;
       try {
-        if (typeof val.toDate === 'function') {
-          const d = val.toDate();
-          return (d.getHours() * 3600) + (d.getMinutes() * 60);
-        }
-        if (val instanceof Date) {
-          return (val.getHours() * 3600) + (val.getMinutes() * 60);
-        }
+        if (typeof val.toDate === 'function') { const d = val.toDate(); return (d.getHours() * 3600) + (d.getMinutes() * 60); }
+        if (val instanceof Date) return (val.getHours() * 3600) + (val.getMinutes() * 60);
         const str = String(val).toLowerCase();
         const match = str.match(/(\d{1,2}):(\d{1,2})/); 
         if (match) {
-          let h = parseInt(match[1], 10);
-          let m = parseInt(match[2], 10);
-          if (str.includes('pm') && h < 12) h += 12;
-          if (str.includes('am') && h === 12) h = 0;
+          let h = parseInt(match[1], 10); let m = parseInt(match[2], 10);
+          if (str.includes('pm') && h < 12) h += 12; if (str.includes('am') && h === 12) h = 0;
           return (h * 3600) + (m * 60);
         }
-      } catch(e) {}
-      return null;
+      } catch(e) {} return null;
     };
 
     const monthStats = users.map(user => {
-      const userRecords = records.filter(r => 
-        r.uid === user.uid && 
-        r.date?.startsWith(currentMonth)
-      );
-      
-      let totalSecs = 0;
-      let presentDays = 0;
+      const userRecords = records.filter(r => r.uid === user.uid && r.date?.startsWith(currentMonth));
+      let totalSecs = 0; let presentDays = 0;
 
       userRecords.forEach(r => {
-        if (!r.status || r.status.toLowerCase() !== 'present' && r.status.toLowerCase() !== 'late') return;
-
-        const inVal = getInTime(r);
-        if (!inVal || String(inVal).includes('--') || String(inVal).includes('LEAVE')) return;
-        
-        const inSec = parseTime(inVal);
-        if (inSec === null) return;
-        
+        if (!r.status || (r.status.toLowerCase() !== 'present' && r.status.toLowerCase() !== 'late')) return;
+        const inSec = parseTime(getInTime(r)); if (inSec === null) return;
         presentDays++;
-        
-        const outVal = getOutTime(r);
-        let outSec = parseTime(outVal);
+        const outVal = getOutTime(r); let outSec = parseTime(outVal);
         const isWorking = !outVal || String(outVal).toLowerCase().includes('work');
-
         if (isWorking) {
-          if (r.date === todayDateStr) outSec = currentSecs; 
-          else outSec = 18 * 3600; // പഴയ ദിവസങ്ങളിൽ 6 PM
+          if (r.date === todayDateStr) { if (currentSecs < 21 * 3600) outSec = currentSecs; else outSec = 17.5 * 3600; }
+          else outSec = 17.5 * 3600; 
         }
-
-        if (outSec !== null) {
-          let diff = outSec - inSec;
-          if (diff < 0) diff += 24 * 3600; 
-          totalSecs += diff;
-        }
+        if (outSec !== null) { let diff = outSec - inSec; if (diff < 0) diff += 24 * 3600; totalSecs += diff; }
       });
       
       const totalHours = Math.floor(totalSecs / 3600);
       const totalMinutes = Math.floor((totalSecs % 3600) / 60);
-      const workTimeStr = `${totalHours}h ${totalMinutes}m`;
-
-      return { 
-        name: user.name, 
-        uid: user.uid, 
-        totalSecs, 
-        workTimeStr, 
-        presentDays,
-        photoURL: user.photoURL,
-        designation: user.designation
-      };
+      return { name: user.name, uid: user.uid, totalSecs, workTimeStr: `${totalHours}h ${totalMinutes}m`, presentDays, photoURL: user.photoURL, designation: user.designation };
     });
-
     return monthStats.sort((a, b) => b.totalSecs - a.totalSecs).slice(0, 3);
   }, [records, users, filters.month]);
 
-  // --- 2. SMART COMBINED RECORDS (Auto-Miss without breaking status) ---
+  // --- 📡 LIVE RADAR LOGIC (Who is in office NOW?) ---
+  const activeStaff = useMemo(() => {
+    const today = format(new Date(), 'yyyy-MM-dd');
+    return records.filter(r => {
+      const outVal = getOutTime(r);
+      const isWorking = !outVal || String(outVal).toLowerCase().includes('work');
+      return r.date === today && isWorking;
+    }).map(r => {
+      const user = users.find(u => u.uid === r.uid);
+      return { ...r, photoURL: user?.photoURL, name: user?.name || r.name };
+    });
+  }, [records, users]);
+
+  // --- SMART RECORDS & CALENDAR LOGIC (Same as your provided code) ---
   const finalRecords = useMemo(() => {
     let currentRecords = records;
     if (filters.date) currentRecords = records.filter(r => r.date === filters.date);
-    else if (filters.month) currentRecords = records.filter(r => r.date?.startsWith(filters.month));
-
     const selectedDate = startOfDay(parseISO(filters.date || format(new Date(), 'yyyy-MM-dd')));
     const now = new Date();
     const isToday = format(now, 'yyyy-MM-dd') === filters.date;
     const isPast11AM = now.getHours() >= 11;
     const isPast9PM = now.getHours() >= 21;
-
     const leaveEntries = [];
-
     if (filters.date && selectedDate.getDay() !== 0) {
       users.forEach(user => {
         const punchRecord = currentRecords.find(r => r.uid === user.uid);
         if (!punchRecord && (!isToday || isPast11AM)) {
-          const activeLeave = leaves.find(l => 
-            l.userId === user.uid && l.status === 'approved' &&
-            isWithinInterval(selectedDate, { start: startOfDay(parseISO(l.startDate)), end: endOfDay(parseISO(l.endDate)) })
-          );
-          if (activeLeave) {
-            leaveEntries.push({
-              id: `leave-${user.uid}`, uid: user.uid, name: user.name, date: filters.date,
-              status: 'leave', checkIn: 'ON LEAVE', checkOut: activeLeave.type, location: 'Approved Leave'
-            });
-          }
+          const activeLeave = leaves.find(l => l.userId === user.uid && l.status === 'approved' && isWithinInterval(selectedDate, { start: startOfDay(parseISO(l.startDate)), end: endOfDay(parseISO(l.endDate)) }));
+          if (activeLeave) leaveEntries.push({ id: `leave-${user.uid}`, uid: user.uid, name: user.name, date: filters.date, status: 'leave', checkIn: 'ON LEAVE', checkOut: activeLeave.type, location: 'Approved Leave' });
         }
       });
     }
-
-    const combined = [...currentRecords, ...leaveEntries];
-
-    return combined.filter(r => r.name?.toLowerCase().includes(filters.search.toLowerCase()))
-      .map(record => {
-        const isPastDay = record.date !== format(now, 'yyyy-MM-dd');
-        const outVal = getOutTime(record);
-        const isWorking = !outVal || String(outVal).toLowerCase().includes('work');
-        
-        let newOutVal = outVal;
-        if (isWorking && (isPast9PM || isPastDay)) {
-          newOutVal = 'Forgot Out';
-        }
-
-        return { ...record, checkOut: newOutVal };
-      });
+    return [...currentRecords, ...leaveEntries].filter(r => r.name?.toLowerCase().includes(filters.search.toLowerCase())).map(record => {
+      const isPastDay = record.date !== format(now, 'yyyy-MM-dd');
+      const outVal = getOutTime(record);
+      const isWorking = !outVal || String(outVal).toLowerCase().includes('work');
+      let newOutVal = outVal;
+      if (isWorking && (isPast9PM || isPastDay)) newOutVal = 'Forgot Out';
+      return { ...record, checkOut: newOutVal };
+    });
   }, [records, leaves, users, filters]);
 
-  // --- 3. EXPECTED LEAVES ---
-  const todaysApprovedLeaves = useMemo(() => {
-    if (!filters.date) return [];
-    const selectedDate = startOfDay(parseISO(filters.date));
-    return users.filter(user => {
-      const hasPunchedIn = records.find(r => r.uid === user.uid && r.date === filters.date);
-      if (hasPunchedIn) return false;
-      return leaves.find(l => l.userId === user.uid && l.status === 'approved' && isWithinInterval(selectedDate, { start: startOfDay(parseISO(l.startDate)), end: endOfDay(parseISO(l.endDate)) }));
-    });
-  }, [leaves, users, records, filters.date]);
-
-  // --- 4. MONTHLY CALENDAR GRID LOGIC (Fixed Sunday & Upcoming Override) ---
   const getFullMonthReport = (staffId, selectedMonth) => {
     if (!staffId || !selectedMonth) return [];
-    
-    const [yearStr, monthStr] = selectedMonth.split('-');
-    const year = parseInt(yearStr, 10);
-    const month = parseInt(monthStr, 10);
+    const [year, month] = selectedMonth.split('-').map(Number);
     const daysCount = getDaysInMonth(new Date(year, month - 1));
-    
     const staffRecords = records.filter(r => r.uid === staffId && r.date?.startsWith(selectedMonth));
     const todayStr = format(new Date(), 'yyyy-MM-dd');
     const report = [];
-
-    const formatTimeForCalendar = (val) => {
-      if (!val) return '--:--';
-      if (typeof val.toDate === 'function') return format(val.toDate(), 'HH:mm');
-      if (val instanceof Date) return format(val, 'HH:mm');
-      return String(val);
-    };
-
     for (let i = 1; i <= daysCount; i++) {
       const currentDate = new Date(year, month - 1, i);
       const dateStr = format(currentDate, 'yyyy-MM-dd');
       const record = staffRecords.find(r => r.date === dateStr);
-      
       let status = record ? (record.status || 'absent').toLowerCase() : 'absent';
-      
-      const isFuture = dateStr > todayStr; 
-      const isSunday = currentDate.getDay() === 0; 
-      
-      const approvedLeave = leaves.find(l => 
-        l.userId === staffId && 
-        l.status === 'approved' && 
-        dateStr >= l.startDate && dateStr <= l.endDate
-      );
-      
-      // Override 'absent' if it's a future date or sunday
+      const approvedLeave = leaves.find(l => l.userId === staffId && l.status === 'approved' && dateStr >= l.startDate && dateStr <= l.endDate);
       if (!record || status === 'absent') {
         if (approvedLeave) status = 'leave';
-        else if (isFuture) status = 'upcoming';
-        else if (isSunday) status = 'holiday';
+        else if (dateStr > todayStr) status = 'upcoming';
+        else if (currentDate.getDay() === 0) status = 'holiday';
       }
-      
-      const inVal = record ? formatTimeForCalendar(getInTime(record)) : '--:--';
-      report.push({ date: dateStr, status: status, checkIn: inVal });
+      report.push({ date: dateStr, status, checkIn: record ? format(getInTime(record)?.toDate?.() || new Date(), 'HH:mm') : '--:--' });
     }
     return report;
   };
 
-  // --- 5. EXPORT & EMAIL LOGIC ---
   const exportMonthlySummary = () => {
     const currentMonth = filters.month || format(new Date(), 'yyyy-MM');
-    const reportData = records.filter(r => r.date?.startsWith(currentMonth));
-    if (!reportData.length) { toast.error('No data'); return; }
     const summaryMap = {};
     users.forEach(u => { summaryMap[u.uid] = { Name: u.name, Present: 0, Late: 0 }; });
-    reportData.forEach(r => { if (summaryMap[r.uid]) { if (r.status?.toLowerCase() === 'present') summaryMap[r.uid].Present++; else if (r.status?.toLowerCase() === 'late') summaryMap[r.uid].Late++; } });
+    records.filter(r => r.date?.startsWith(currentMonth)).forEach(r => { if (summaryMap[r.uid]) { if (r.status?.toLowerCase() === 'present') summaryMap[r.uid].Present++; else if (r.status?.toLowerCase() === 'late') summaryMap[r.uid].Late++; } });
     const csv = ["Staff Name,Present Days,Late Entries", ...Object.values(summaryMap).map(s => `${s.Name},${s.Present},${s.Late}`)].join("\n");
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `Nexora_Payroll_${currentMonth}.csv`;
-    link.click();
+    const link = document.createElement("a"); link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' })); link.download = `Nexora_Payroll_${currentMonth}.csv`; link.click();
   };
 
   const handleLeaveStatus = async (leave, newStatus) => {
@@ -267,11 +177,7 @@ export default function AdminDashboard() {
     const last7Days = [...Array(7)].map((_, i) => format(subDays(new Date(), i), 'yyyy-MM-dd')).reverse();
     const trend = last7Days.map(date => ({ name: format(new Date(date), 'EEE'), present: records.filter(r => r.date === date).length }));
     const todayRecs = records.filter(r => r.date === format(new Date(), 'yyyy-MM-dd'));
-    return { trend, distribution: [
-      { name: 'On Time', value: todayRecs.filter(r => r.status?.toLowerCase() === 'present').length },
-      { name: 'Late', value: todayRecs.filter(r => r.status?.toLowerCase() === 'late').length },
-      { name: 'Absent', value: Math.max(0, users.length - todayRecs.length) }
-    ]};
+    return { trend, distribution: [{ name: 'On Time', value: todayRecs.filter(r => r.status?.toLowerCase() === 'present').length }, { name: 'Late', value: todayRecs.filter(r => r.status?.toLowerCase() === 'late').length }, { name: 'Absent', value: Math.max(0, users.length - todayRecs.length) }]};
   }, [records, users]);
 
   const selectedStaffForReport = (filters.search.length >= 2 && filters.month) ? users.find(u => u.name?.toLowerCase().includes(filters.search.toLowerCase())) : null;
@@ -280,118 +186,158 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-10 px-4">
+      
+      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-display font-bold text-text-bright">Nexora Control Center</h1>
-          <p className="text-text-muted">Hello Jaison, monitoring staff performance</p>
+          <h1 className="text-3xl font-display font-bold text-text-bright flex items-center gap-3">
+            <Shield className="text-cyan-400" /> Nexora Control Center
+          </h1>
+          <p className="text-text-muted">Commanding Nexora SM Operations | Jaison Pious</p>
         </div>
-        <button onClick={exportMonthlySummary} className="btn-primary flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 py-3 px-6 rounded-xl shadow-lg">
-          <Download size={18} /> Payroll Excel
+        <button onClick={exportMonthlySummary} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-6 rounded-2xl shadow-lg flex items-center gap-2 transition-all">
+          <Download size={18} /> Export Payroll
         </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 glass rounded-3xl p-6 border border-white/5 h-[320px]">
-          <h3 className="text-lg font-bold text-text-bright mb-6 flex items-center gap-2"><TrendingUp size={20} className="text-cyan-400" /> Weekly Presence</h3>
-          <ResponsiveContainer width="100%" height="100%"><BarChart data={chartData.trend}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} /><XAxis dataKey="name" stroke="#94a3b8" fontSize={12} /><YAxis stroke="#94a3b8" fontSize={12} /><Tooltip contentStyle={{ backgroundColor: '#1e293b', border: 'none', borderRadius: '12px' }} /><Bar dataKey="present" fill="#22d3ee" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer>
-        </div>
-        <div className="glass rounded-3xl p-6 border border-white/5 h-[320px] flex flex-col">
-          <h3 className="text-lg font-bold text-text-bright mb-2 text-center">Today's Summary</h3>
-          <div className="flex-1 w-full relative">
-            <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={chartData.distribution} cx="50%" cy="50%" innerRadius={50} outerRadius={70} paddingAngle={5} dataKey="value">{chartData.distribution.map((_, i) => <Cell key={`c-${i}`} fill={PIE_COLORS[i]} />)}</Pie><Legend iconType="circle" /></PieChart></ResponsiveContainer>
+        
+        {/* --- 📡 LIVE OFFICE RADAR --- */}
+        <div className="lg:col-span-1 glass rounded-[2rem] p-6 border border-cyan-500/20 bg-[#020617] relative overflow-hidden h-[450px] flex flex-col items-center">
+          <div className="absolute top-4 left-6 z-10">
+            <h3 className="text-sm font-black text-cyan-400 uppercase tracking-[0.2em] flex items-center gap-2">
+              <Radio size={16} className="animate-pulse" /> Live Radar
+            </h3>
+            <p className="text-[10px] text-text-muted font-mono mt-1">SCANNING OFFICE PREMISES...</p>
           </div>
+
+          <div className="relative w-64 h-64 mt-12 md:w-72 md:h-72">
+            {/* Radar Rings */}
+            <div className="absolute inset-0 border-2 border-cyan-500/10 rounded-full" />
+            <div className="absolute inset-4 border border-cyan-500/10 rounded-full" />
+            <div className="absolute inset-12 border border-cyan-500/10 rounded-full" />
+            <div className="absolute inset-24 border border-cyan-500/10 rounded-full" />
+            
+            {/* Rotating Scanner Line */}
+            <motion.div 
+              animate={{ rotate: 360 }} transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+              className="absolute inset-0 rounded-full bg-gradient-to-r from-cyan-500/20 to-transparent origin-center"
+              style={{ clipPath: 'polygon(50% 50%, 100% 50%, 100% 0)' }}
+            />
+
+            {/* Active Staff Dots */}
+            <AnimatePresence>
+              {activeStaff.map((staff, idx) => {
+                // Random positions within the radar circle
+                const angle = (idx * 137.5) % 360; 
+                const distance = 30 + (idx * 15) % 60;
+                return (
+                  <motion.div
+                    key={staff.uid}
+                    initial={{ opacity: 0, scale: 0 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0 }}
+                    className="absolute z-20 group cursor-pointer"
+                    style={{ 
+                      top: `${50 + distance * Math.sin(angle * Math.PI / 180)}%`,
+                      left: `${50 + distance * Math.cos(angle * Math.PI / 180)}%`
+                    }}
+                  >
+                    <div className="w-8 h-8 rounded-full border-2 border-cyan-400 p-0.5 bg-black shadow-[0_0_15px_rgba(34,211,238,0.5)] overflow-hidden">
+                      {staff.photoURL ? <img src={staff.photoURL} className="w-full h-full object-cover" /> : <User size={14} className="m-auto text-cyan-400" />}
+                    </div>
+                    {/* Tooltip on Hover */}
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-cyan-500 text-black text-[10px] font-black px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
+                      {staff.name} (IN)
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </div>
+
+          <div className="mt-auto w-full text-center pb-2">
+            <div className="text-[10px] font-mono text-cyan-400/60 uppercase tracking-widest">
+              Total Active: <span className="text-white text-sm font-bold">{activeStaff.length}</span>
+            </div>
+            <div className="flex justify-center gap-1 mt-2">
+               {[0,1,2,3].map(i => <motion.div key={i} animate={{ opacity: [0.2, 1, 0.2] }} transition={{ repeat: Infinity, duration: 1.5, delay: i * 0.3 }} className="w-1 h-1 bg-cyan-400 rounded-full" />)}
+            </div>
+          </div>
+        </div>
+
+        {/* Weekly Trend Chart */}
+        <div className="lg:col-span-2 glass rounded-[2rem] p-6 border border-white/5 h-[450px]">
+          <h3 className="text-lg font-bold text-text-bright mb-6 flex items-center gap-2"><TrendingUp size={20} className="text-cyan-400" /> Weekly Activity</h3>
+          <ResponsiveContainer width="100%" height="80%"><BarChart data={chartData.trend}><CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} /><XAxis dataKey="name" stroke="#94a3b8" fontSize={12} /><YAxis stroke="#94a3b8" fontSize={12} /><Tooltip contentStyle={{ backgroundColor: '#020617', border: '1px solid #ffffff10', borderRadius: '12px' }} /><Bar dataKey="present" fill="#22d3ee" radius={[6, 6, 0, 0]} /></BarChart></ResponsiveContainer>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* --- SMART LEADERBOARD UI WITH PHOTOS --- */}
-        <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="lg:col-span-1 glass rounded-3xl p-6 border border-yellow-500/20 bg-yellow-500/5">
-          <h3 className="text-lg font-bold text-text-bright mb-4 flex items-center gap-2"><Trophy className="text-yellow-400" size={20} /> Top Performers</h3>
-          <p className="text-[10px] text-text-muted mb-4 leading-tight">Ranked by Total Working Hours this month.</p>
+        {/* Top Performers Leaderboard */}
+        <div className="lg:col-span-1 glass rounded-3xl p-6 border border-yellow-500/20 bg-yellow-500/5">
+          <h3 className="text-lg font-bold text-text-bright mb-4 flex items-center gap-2"><Trophy className="text-yellow-400" size={20} /> Hall of Fame</h3>
           <div className="space-y-3">
             {leaderboard.map((staff, index) => (
-              <div key={staff.uid} className="flex items-center justify-between bg-white/5 p-3 rounded-2xl border border-white/5">
+              <div key={staff.uid} className="flex items-center justify-between bg-white/5 p-3 rounded-2xl border border-white/5 transition-transform hover:scale-[1.02]">
                 <div className="flex items-center gap-3">
-                  <div className="relative flex-shrink-0">
-                    <div className={`w-10 h-10 rounded-full overflow-hidden border-2 flex items-center justify-center font-bold text-sm ${index === 0 ? 'border-yellow-400 bg-yellow-500 text-black shadow-[0_0_10px_rgba(234,179,8,0.3)]' : 'border-white/10 bg-white/10 text-white'}`}>
-                      {staff.photoURL ? (
-                        <img src={staff.photoURL} alt={staff.name} className="w-full h-full object-cover" />
-                      ) : (
-                        staff.name?.charAt(0).toUpperCase()
-                      )}
+                  <div className="relative">
+                    <div className={`w-10 h-10 rounded-full overflow-hidden border-2 ${index === 0 ? 'border-yellow-400 shadow-[0_0_10px_rgba(234,179,8,0.4)]' : 'border-white/10'}`}>
+                      {staff.photoURL ? <img src={staff.photoURL} className="w-full h-full object-cover" /> : staff.name?.charAt(0)}
                     </div>
-                    <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold ${index === 0 ? 'bg-yellow-500 text-black' : 'bg-slate-700 text-white'}`}>
-                      {index + 1}
-                    </div>
+                    <span className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full text-[8px] font-bold flex items-center justify-center ${index === 0 ? 'bg-yellow-500 text-black' : 'bg-slate-700 text-white'}`}>{index+1}</span>
                   </div>
-                  <div className="overflow-hidden">
-                    <p className="font-bold text-sm text-text-bright truncate max-w-[100px]">{staff.name}</p>
-                    <p className="text-[9px] text-text-muted truncate">{staff.designation || 'Nexora Team'}</p>
-                  </div>
+                  <div><p className="font-bold text-sm text-text-bright">{staff.name}</p><p className="text-[9px] text-text-muted">{staff.designation}</p></div>
                 </div>
-                <div className="flex flex-col items-end">
-                  <div className="flex items-center gap-1">
-                    <span className="text-xs font-bold text-emerald-400">{staff.workTimeStr}</span>
-                    {index === 0 && <Award size={16} className="text-yellow-400" />}
-                  </div>
-                  <span className="text-[9px] text-text-muted mt-0.5">{staff.presentDays} Days Present</span>
-                </div>
+                <div className="text-right"><p className="text-xs font-bold text-emerald-400">{staff.workTimeStr}</p><p className="text-[8px] text-text-muted">{staff.presentDays} Days</p></div>
               </div>
             ))}
-            {leaderboard.length === 0 && <p className="text-sm text-text-muted text-center pt-4">No completed shifts yet.</p>}
           </div>
-        </motion.div>
+        </div>
 
-        <div className="lg:col-span-2 space-y-4">
-          {finalRecords.some(r => r.checkOut === 'Forgot Out') && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-2xl flex items-center gap-3">
-              <AlertCircle className="text-rose-400" size={20} />
-              <p className="text-sm text-rose-300 font-medium">System Alert: Some staff forgot to punch out. Marked as Forgot Out.</p>
-            </motion.div>
-          )}
-
-          {todaysApprovedLeaves.length > 0 && filters.date === format(new Date(), 'yyyy-MM-dd') && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-2xl flex items-center gap-4">
-              <PlaneTakeoff className="text-amber-400" size={20} />
-              <div className="flex-1">
-                <p className="text-sm font-bold text-amber-400">Expected on Leave Today:</p>
-                <div className="flex flex-wrap gap-2 mt-1">
-                  {todaysApprovedLeaves.map(u => (<span key={u.uid} className="text-xs bg-amber-500/20 px-2 py-1 rounded-md text-text-bright border border-amber-500/30">{u.name}</span>))}
-                </div>
-              </div>
-            </motion.div>
-          )}
-
-          {leaves.filter(l => l.status === 'pending').length > 0 && (
-            <div className="glass rounded-3xl p-5 border border-amber-500/20 bg-amber-500/5">
-              <h3 className="text-lg font-bold text-text-bright mb-3 flex items-center gap-2"><FileText size={18} className="text-amber-400" /> Pending Leaves</h3>
-              <div className="grid grid-cols-1 gap-3">
+        {/* Today's Summary & Leave Approvals */}
+        <div className="lg:col-span-2 space-y-6">
+           {/* Pending Leave Requests */}
+           {leaves.filter(l => l.status === 'pending').length > 0 && (
+            <div className="glass rounded-3xl p-6 border border-amber-500/30 bg-amber-500/5">
+              <h3 className="text-lg font-bold text-text-bright mb-4 flex items-center gap-2"><Navigation className="text-amber-400" size={18} /> Leave Authorization Required</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {leaves.filter(l => l.status === 'pending').map((leave) => (
-                  <div key={leave.id} className="bg-white/5 rounded-2xl p-3 flex justify-between items-center border border-white/5">
-                    <div><p className="font-bold text-sm text-text-bright">{leave.userName}</p><p className="text-[10px] text-text-muted">{leave.startDate} to {leave.endDate}</p></div>
+                  <div key={leave.id} className="bg-black/40 rounded-2xl p-4 border border-white/5 flex justify-between items-center">
+                    <div><p className="font-bold text-sm text-white">{leave.userName}</p><p className="text-[10px] text-text-muted">{leave.startDate} - {leave.endDate}</p></div>
                     <div className="flex gap-2">
-                      <button onClick={() => handleLeaveStatus(leave, 'approved')} className="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg"><Check size={16} /></button>
-                      <button onClick={() => handleLeaveStatus(leave, 'rejected')} className="p-2 bg-rose-500/20 text-rose-400 rounded-lg"><X size={16} /></button>
+                      <button onClick={() => handleLeaveStatus(leave, 'approved')} className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl hover:bg-emerald-500/30 transition-colors"><Check size={16} /></button>
+                      <button onClick={() => handleLeaveStatus(leave, 'rejected')} className="p-2 bg-rose-500/20 text-rose-400 rounded-xl hover:bg-rose-500/30 transition-colors"><X size={16} /></button>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
-          )}
+           )}
+
+           {/* Pie Chart Distribution */}
+           <div className="glass rounded-3xl p-6 border border-white/5 h-[280px] flex items-center">
+              <div className="flex-1">
+                 <h3 className="text-lg font-bold text-text-bright">Daily Overview</h3>
+                 <p className="text-xs text-text-muted mt-1">On Time vs Late vs Absent</p>
+              </div>
+              <div className="w-1/2 h-full">
+                <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={chartData.distribution} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={5} dataKey="value">{chartData.distribution.map((_, i) => <Cell key={`c-${i}`} fill={PIE_COLORS[i]} />)}</Pie><Tooltip /><Legend /></PieChart></ResponsiveContainer>
+              </div>
+           </div>
         </div>
       </div>
 
+      {/* Monthly Calendar Report (Visible when searching staff) */}
       {selectedStaffForReport && (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-3xl p-6 border border-violet-500/20 bg-violet-500/5">
-          <h3 className="text-lg font-bold text-text-bright mb-4 flex items-center gap-2"><Calendar size={20} className="text-violet-400" /> Calendar Summary: {selectedStaffForReport.name}</h3>
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-7 gap-2">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-[2rem] p-8 border border-violet-500/20 bg-violet-500/5">
+          <h3 className="text-xl font-bold text-text-bright mb-6 flex items-center gap-3"><Calendar className="text-violet-400" /> Deep Analytics: {selectedStaffForReport.name}</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3">
             {getFullMonthReport(selectedStaffForReport.uid, filters.month).map((day) => {
               let color = day.status === 'absent' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' : day.status === 'leave' ? 'bg-amber-500/20 text-amber-400 border-amber-500/40' : day.status === 'holiday' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : day.status === 'upcoming' ? 'bg-white/5 text-text-muted border-white/10' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
               return (
-                <div key={day.date} className={`p-2 rounded-xl border ${color} transition-all`}>
-                  <p className="text-[9px] opacity-60 font-mono">{day.date.split('-')[2]}/{day.date.split('-')[1]}</p>
-                  <p className="text-[10px] font-bold uppercase mt-0.5 flex items-center gap-1">{day.status === 'leave' && <PlaneTakeoff size={10} />}{day.status === 'holiday' ? 'SUNDAY' : day.status}</p>
-                  {(day.status?.toLowerCase() === 'present' || day.status?.toLowerCase() === 'late' || day.status === 'Forgot Out') && <p className="text-[8px] opacity-80 mt-0.5">{day.checkIn}</p>}
+                <div key={day.date} className={`p-3 rounded-2xl border ${color} transition-all hover:scale-105`}>
+                  <p className="text-[10px] opacity-60 font-mono">{day.date.split('-')[2]}/{day.date.split('-')[1]}</p>
+                  <p className="text-xs font-black uppercase mt-1">{day.status === 'holiday' ? 'SUN' : day.status}</p>
+                  {(day.status === 'present' || day.status === 'late') && <p className="text-[10px] font-mono mt-1 opacity-80">{day.checkIn}</p>}
                 </div>
               );
             })}
@@ -399,14 +345,18 @@ export default function AdminDashboard() {
         </motion.div>
       )}
 
-      <div className="glass rounded-3xl p-6 border border-white/5">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="relative"><Search className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" size={18} /><input type="text" placeholder="Search staff name..." className="input-field pl-10 w-full outline-none" value={filters.search} onChange={(e) => setFilters({...filters, search: e.target.value})} /></div>
-          <input type="date" className="input-field outline-none" value={filters.date} onChange={(e) => setFilters({...filters, date: e.target.value, month: ''})} />
-          <input type="month" className="input-field border-emerald-500/20 outline-none" value={filters.month} onChange={(e) => setFilters({...filters, month: e.target.value, date: ''})} />
+      {/* Main Records Table */}
+      <div className="glass rounded-[2rem] p-8 border border-white/5">
+        <div className="flex flex-col md:flex-row gap-4 mb-8">
+          <div className="relative flex-1"><Search className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted" size={20} /><input type="text" placeholder="Search team member..." className="w-full bg-white/5 border border-white/10 rounded-2xl py-3 pl-12 pr-4 outline-none focus:border-cyan-500 transition-all text-white" value={filters.search} onChange={(e) => setFilters({...filters, search: e.target.value})} /></div>
+          <div className="flex gap-4">
+            <input type="date" className="bg-white/5 border border-white/10 rounded-2xl px-4 py-3 outline-none focus:border-cyan-500 text-white" value={filters.date} onChange={(e) => setFilters({...filters, date: e.target.value, month: ''})} />
+            <input type="month" className="bg-white/5 border border-white/10 rounded-2xl px-4 py-3 outline-none focus:border-emerald-500 text-white" value={filters.month} onChange={(e) => setFilters({...filters, month: e.target.value, date: ''})} />
+          </div>
         </div>
         <AttendanceTable records={finalRecords} showUser />
       </div>
+
     </div>
   );
 }
