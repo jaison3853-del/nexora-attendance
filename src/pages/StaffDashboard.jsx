@@ -42,21 +42,11 @@ export default function StaffDashboard() {
   const [allRecords, setAllRecords] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
 
-  // --- 🔊 PLAY BOOT-UP SOUND ---
-  useEffect(() => {
-    if (loading) {
-      // Sci-Fi Scanning Sound Effect
-      const bootSound = new Audio('https://assets.mixkit.co/active_storage/sfx/2578/2578-preview.mp3');
-      bootSound.volume = 0.5; // Volume set to 50%
-      bootSound.play().catch(err => console.log("Audio autoplay prevented by browser (needs user click first):", err));
-    }
-  }, [loading]);
-
   useEffect(() => {
     const loadData = async () => {
       try {
-        // 🎬 Cinematic Loader Delay (3.8s)
-        const minLoadTime = new Promise(resolve => setTimeout(resolve, 3800));
+        // 🌌 AVATAR INTRO DELAY (4.5s to fully enjoy the cinematic visual)
+        const minLoadTime = new Promise(resolve => setTimeout(resolve, 4500));
 
         const [today, all, _] = await Promise.all([
           getTodayAttendance(user.uid, dateKey),
@@ -89,7 +79,8 @@ export default function StaffDashboard() {
     });
 
     if (!sessionStorage.getItem('seenChallengePoster')) {
-      setTimeout(() => setShowWelcomePoster(true), 4500); 
+      // 5.5s to show poster after the Avatar Intro
+      setTimeout(() => setShowWelcomePoster(true), 5500); 
       sessionStorage.setItem('seenChallengePoster', 'true');
     }
 
@@ -157,7 +148,7 @@ export default function StaffDashboard() {
         let outSec = parseTime(outVal);
         const isWorking = !outVal || String(outVal).toLowerCase().includes('work');
         
-        // 🛑 NEW PENALTY & OVERTIME LOGIC 🛑
+        // 🛑 PENALTY & OVERTIME LOGIC
         if (isWorking) { 
            if (r.date === todayDateStr) {
                if (currentSecs < 21 * 3600) {
@@ -210,57 +201,78 @@ export default function StaffDashboard() {
     setIsSendingKudos(false);
   };
 
-  // --- 🎬 HOLLYWOOD STYLE CREATOR INTRO ---
+  // --- 🌌 AVATAR MOVIE STYLE CINEMATIC INTRO 🌌 ---
   if (loading) {
     return (
       <AnimatePresence mode="wait">
         <motion.div 
-          key="cinematic-intro"
-          initial={{ opacity: 1 }} exit={{ opacity: 0, scale: 1.1, filter: "blur(10px)" }} transition={{ duration: 0.8, ease: "easeInOut" }}
-          className="fixed inset-0 z-[99999] bg-[#020617] flex flex-col items-center justify-center overflow-hidden px-4"
+          key="avatar-intro"
+          initial={{ opacity: 1 }} 
+          exit={{ opacity: 0, scale: 1.1, filter: "blur(20px)" }} 
+          transition={{ duration: 1.2, ease: "easeInOut" }}
+          className="fixed inset-0 z-[99999] bg-[#010a15] flex flex-col items-center justify-center overflow-hidden px-4"
         >
-          {/* Background Ambient Glow */}
+          {/* Bioluminescent Deep Glow (Pandora Forest Vibe) */}
           <div className="absolute inset-0 flex items-center justify-center">
-             <div className="w-[200px] h-[200px] md:w-[400px] md:h-[400px] bg-cyan-500/10 blur-[100px] md:blur-[150px] rounded-full animate-pulse" />
+             <motion.div 
+               animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.6, 0.3] }} 
+               transition={{ duration: 4, ease: "easeInOut", repeat: Infinity }}
+               className="w-[300px] h-[300px] md:w-[600px] md:h-[600px] bg-[#0ea5e9]/20 blur-[120px] md:blur-[180px] rounded-full" 
+             />
           </div>
+
+          {/* Floating Light Particles (Seeds of the Tree of Souls) */}
+          {Array.from({ length: 25 }).map((_, i) => (
+             <motion.div
+               key={`particle-${i}`}
+               initial={{ 
+                 y: '100vh', 
+                 x: (Math.random() - 0.5) * window.innerWidth,
+                 opacity: 0, scale: 0
+               }}
+               animate={{ 
+                 y: '-20vh',
+                 opacity: [0, 0.8, 1, 0],
+                 scale: [0, Math.random() * 1.5 + 0.5, 0]
+               }}
+               transition={{ 
+                 duration: Math.random() * 4 + 3, 
+                 repeat: Infinity, 
+                 delay: Math.random() * 3,
+                 ease: "linear"
+               }}
+               className="absolute w-1 h-1 md:w-2 md:h-2 bg-cyan-200 rounded-full shadow-[0_0_15px_#22d3ee]"
+             />
+          ))}
           
-          <div className="z-10 flex flex-col items-center w-full max-w-sm md:max-w-xl text-center">
+          <div className="z-10 flex flex-col items-center w-full text-center">
             
-            {/* Small Intro Text */}
+            {/* Elegant Subtitle */}
             <motion.p 
-              initial={{ opacity: 0, y: 10, letterSpacing: "0.1em" }}
-              animate={{ opacity: 1, y: 0, letterSpacing: "0.4em" }}
-              transition={{ duration: 1.2, ease: "easeOut" }}
-              className="text-cyan-500/80 font-mono text-[9px] md:text-[11px] uppercase mb-4 md:mb-6"
+              initial={{ opacity: 0, y: 20, letterSpacing: "0.2em" }}
+              animate={{ opacity: 1, y: 0, letterSpacing: "0.6em" }}
+              transition={{ duration: 1.5, ease: "easeOut" }}
+              className="text-cyan-200/70 font-light text-[10px] md:text-xs uppercase mb-6"
             >
-              Designed & Engineered By
+              A Vision By
             </motion.p>
             
-            {/* BIG CREATOR NAME */}
+            {/* BIG CREATOR NAME - Majestic Glowing Text */}
             <motion.h1 
-              initial={{ opacity: 0, scale: 0.8, filter: "blur(15px)" }}
+              initial={{ opacity: 0, scale: 0.9, filter: "blur(20px)" }}
               animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-              transition={{ duration: 1.5, delay: 0.5, ease: "easeOut" }}
-              className="text-4xl sm:text-5xl md:text-7xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white via-white/90 to-white/20 tracking-tighter drop-shadow-[0_0_20px_rgba(255,255,255,0.2)]"
+              transition={{ duration: 2.5, delay: 0.8, ease: "easeOut" }}
+              className="text-5xl sm:text-6xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-b from-cyan-50 via-cyan-300 to-blue-600 tracking-wider"
+              style={{ textShadow: '0 0 40px rgba(34,211,238,0.5)' }}
             >
               JAISON PIOUS
             </motion.h1>
             
-            {/* Laser Line Separator */}
-            <motion.div 
-              initial={{ width: 0 }} animate={{ width: "100%" }} transition={{ duration: 1.5, delay: 1.5, ease: "easeInOut" }}
-              className="h-[1px] md:h-[2px] bg-gradient-to-r from-transparent via-cyan-500 to-transparent w-full mt-6 md:mt-8 max-w-[200px] md:max-w-[300px]"
-            />
-            
-            {/* System Initializing Text */}
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 2.2, duration: 1 }} className="mt-6 md:mt-8 flex flex-col items-center gap-3">
-               <p className="text-cyan-400 font-mono text-[9px] md:text-[11px] uppercase tracking-[0.3em] animate-pulse px-2">
-                 Initializing Nexora SM...
+            {/* Gentle Initializing Text */}
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 3, duration: 1.5 }} className="mt-16 flex flex-col items-center gap-3">
+               <p className="text-cyan-300/60 font-mono text-[9px] md:text-[11px] uppercase tracking-[0.4em] animate-pulse px-2">
+                 Entering Nexora SM...
                </p>
-               {/* Blinking Dots */}
-               <div className="flex gap-2 mt-2">
-                 {[0,1,2].map(i => <motion.div key={i} animate={{ opacity: [0,1,0] }} transition={{ repeat: Infinity, duration: 1.5, delay: i * 0.2 }} className="w-1.5 h-1.5 bg-cyan-400 rounded-full" />)}
-               </div>
             </motion.div>
             
           </div>
