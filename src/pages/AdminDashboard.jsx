@@ -45,6 +45,28 @@ export default function AdminDashboard() {
   const getInTime = (r) => r?.punchIn || r?.checkIn || r?.timeIn || r?.inTime || r?.time || r?.createdAt || null;
   const getOutTime = (r) => r?.punchOut || r?.punchOutTime || r?.checkOut || r?.timeOut || r?.outTime || null;
 
+  // --- ⏰ TIME FORMATTER (Converts to 12-Hour AM/PM) ---
+  const formatTime12Hr = (val) => {
+    if (!val || String(val).includes('--')) return '--:--';
+    try {
+      if (typeof val.toDate === 'function') return format(val.toDate(), 'hh:mm a');
+      if (val instanceof Date) return format(val, 'hh:mm a');
+      
+      const str = String(val).toUpperCase();
+      if (str.includes('AM') || str.includes('PM')) return str;
+      
+      const match = str.match(/(\d{1,2}):(\d{1,2})/);
+      if (match) {
+        let h = parseInt(match[1], 10);
+        const m = match[2];
+        const ampm = h >= 12 ? 'PM' : 'AM';
+        h = h % 12 || 12;
+        return `${h}:${m} ${ampm}`;
+      }
+    } catch (e) {}
+    return String(val);
+  };
+
   // --- 🏆 SMART LEADERBOARD ---
   const leaderboard = useMemo(() => {
     const currentMonth = filters.month || format(new Date(), 'yyyy-MM');
@@ -91,7 +113,7 @@ export default function AdminDashboard() {
     return monthStats.sort((a, b) => b.totalSecs - a.totalSecs).slice(0, 3);
   }, [records, users, filters.month]);
 
-  // --- 📡 LIVE RADAR LOGIC (Who is in office NOW?) ---
+  // --- 📡 LIVE RADAR LOGIC ---
   const activeStaff = useMemo(() => {
     const today = format(new Date(), 'yyyy-MM-dd');
     return records.filter(r => {
@@ -104,7 +126,7 @@ export default function AdminDashboard() {
     });
   }, [records, users]);
 
-  // --- SMART RECORDS & CALENDAR LOGIC (Same as your provided code) ---
+  // --- SMART RECORDS & CALENDAR LOGIC ---
   const finalRecords = useMemo(() => {
     let currentRecords = records;
     if (filters.date) currentRecords = records.filter(r => r.date === filters.date);
@@ -133,6 +155,7 @@ export default function AdminDashboard() {
     });
   }, [records, leaves, users, filters]);
 
+  // --- 📅 FIXED DEEP ANALYTICS REPORT ---
   const getFullMonthReport = (staffId, selectedMonth) => {
     if (!staffId || !selectedMonth) return [];
     const [year, month] = selectedMonth.split('-').map(Number);
@@ -140,18 +163,49 @@ export default function AdminDashboard() {
     const staffRecords = records.filter(r => r.uid === staffId && r.date?.startsWith(selectedMonth));
     const todayStr = format(new Date(), 'yyyy-MM-dd');
     const report = [];
+
     for (let i = 1; i <= daysCount; i++) {
       const currentDate = new Date(year, month - 1, i);
       const dateStr = format(currentDate, 'yyyy-MM-dd');
+      const dayName = format(currentDate, 'EEE'); // Mon, Tue, etc.
       const record = staffRecords.find(r => r.date === dateStr);
+      
       let status = record ? (record.status || 'absent').toLowerCase() : 'absent';
       const approvedLeave = leaves.find(l => l.userId === staffId && l.status === 'approved' && dateStr >= l.startDate && dateStr <= l.endDate);
+      
       if (!record || status === 'absent') {
         if (approvedLeave) status = 'leave';
         else if (dateStr > todayStr) status = 'upcoming';
         else if (currentDate.getDay() === 0) status = 'holiday';
       }
-      report.push({ date: dateStr, status, checkIn: record ? format(getInTime(record)?.toDate?.() || new Date(), 'HH:mm') : '--:--' });
+
+      // Calculate 12-Hour IN and OUT times
+      let inTimeStr = '--:--';
+      let outTimeStr = '--:--';
+      
+      if (record) {
+         inTimeStr = formatTime12Hr(getInTime(record));
+         outTimeStr = formatTime12Hr(getOutTime(record));
+         
+         const isPastDay = dateStr !== todayStr;
+         const isPast9PM = new Date().getHours() >= 21;
+         const outValRaw = getOutTime(record);
+         const isWorking = !outValRaw || String(outValRaw).toLowerCase().includes('work');
+         
+         if (isWorking && (isPastDay || (dateStr === todayStr && isPast9PM))) {
+             outTimeStr = 'Forgot Out';
+         } else if (isWorking) {
+             outTimeStr = 'Working';
+         }
+      }
+
+      report.push({ 
+        date: dateStr, 
+        displayDate: `${format(currentDate, 'dd/MM')} ${dayName}`,
+        status, 
+        checkIn: inTimeStr,
+        checkOut: outTimeStr
+      });
     }
     return report;
   };
@@ -212,23 +266,19 @@ export default function AdminDashboard() {
           </div>
 
           <div className="relative w-64 h-64 mt-12 md:w-72 md:h-72">
-            {/* Radar Rings */}
             <div className="absolute inset-0 border-2 border-cyan-500/10 rounded-full" />
             <div className="absolute inset-4 border border-cyan-500/10 rounded-full" />
             <div className="absolute inset-12 border border-cyan-500/10 rounded-full" />
             <div className="absolute inset-24 border border-cyan-500/10 rounded-full" />
             
-            {/* Rotating Scanner Line */}
             <motion.div 
               animate={{ rotate: 360 }} transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
               className="absolute inset-0 rounded-full bg-gradient-to-r from-cyan-500/20 to-transparent origin-center"
               style={{ clipPath: 'polygon(50% 50%, 100% 50%, 100% 0)' }}
             />
 
-            {/* Active Staff Dots */}
             <AnimatePresence>
               {activeStaff.map((staff, idx) => {
-                // Random positions within the radar circle
                 const angle = (idx * 137.5) % 360; 
                 const distance = 30 + (idx * 15) % 60;
                 return (
@@ -236,15 +286,11 @@ export default function AdminDashboard() {
                     key={staff.uid}
                     initial={{ opacity: 0, scale: 0 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0 }}
                     className="absolute z-20 group cursor-pointer"
-                    style={{ 
-                      top: `${50 + distance * Math.sin(angle * Math.PI / 180)}%`,
-                      left: `${50 + distance * Math.cos(angle * Math.PI / 180)}%`
-                    }}
+                    style={{ top: `${50 + distance * Math.sin(angle * Math.PI / 180)}%`, left: `${50 + distance * Math.cos(angle * Math.PI / 180)}%` }}
                   >
                     <div className="w-8 h-8 rounded-full border-2 border-cyan-400 p-0.5 bg-black shadow-[0_0_15px_rgba(34,211,238,0.5)] overflow-hidden">
                       {staff.photoURL ? <img src={staff.photoURL} className="w-full h-full object-cover" /> : <User size={14} className="m-auto text-cyan-400" />}
                     </div>
-                    {/* Tooltip on Hover */}
                     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-cyan-500 text-black text-[10px] font-black px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
                       {staff.name} (IN)
                     </div>
@@ -255,12 +301,8 @@ export default function AdminDashboard() {
           </div>
 
           <div className="mt-auto w-full text-center pb-2">
-            <div className="text-[10px] font-mono text-cyan-400/60 uppercase tracking-widest">
-              Total Active: <span className="text-white text-sm font-bold">{activeStaff.length}</span>
-            </div>
-            <div className="flex justify-center gap-1 mt-2">
-               {[0,1,2,3].map(i => <motion.div key={i} animate={{ opacity: [0.2, 1, 0.2] }} transition={{ repeat: Infinity, duration: 1.5, delay: i * 0.3 }} className="w-1 h-1 bg-cyan-400 rounded-full" />)}
-            </div>
+            <div className="text-[10px] font-mono text-cyan-400/60 uppercase tracking-widest">Total Active: <span className="text-white text-sm font-bold">{activeStaff.length}</span></div>
+            <div className="flex justify-center gap-1 mt-2">{[0,1,2,3].map(i => <motion.div key={i} animate={{ opacity: [0.2, 1, 0.2] }} transition={{ repeat: Infinity, duration: 1.5, delay: i * 0.3 }} className="w-1 h-1 bg-cyan-400 rounded-full" />)}</div>
           </div>
         </div>
 
@@ -295,7 +337,6 @@ export default function AdminDashboard() {
 
         {/* Today's Summary & Leave Approvals */}
         <div className="lg:col-span-2 space-y-6">
-           {/* Pending Leave Requests */}
            {leaves.filter(l => l.status === 'pending').length > 0 && (
             <div className="glass rounded-3xl p-6 border border-amber-500/30 bg-amber-500/5">
               <h3 className="text-lg font-bold text-text-bright mb-4 flex items-center gap-2"><Navigation className="text-amber-400" size={18} /> Leave Authorization Required</h3>
@@ -313,7 +354,6 @@ export default function AdminDashboard() {
             </div>
            )}
 
-           {/* Pie Chart Distribution */}
            <div className="glass rounded-3xl p-6 border border-white/5 h-[280px] flex items-center">
               <div className="flex-1">
                  <h3 className="text-lg font-bold text-text-bright">Daily Overview</h3>
@@ -326,7 +366,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Monthly Calendar Report (Visible when searching staff) */}
+      {/* --- 📅 UPDATED CALENDAR UI --- */}
       {selectedStaffForReport && (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-[2rem] p-8 border border-violet-500/20 bg-violet-500/5">
           <h3 className="text-xl font-bold text-text-bright mb-6 flex items-center gap-3"><Calendar className="text-violet-400" /> Deep Analytics: {selectedStaffForReport.name}</h3>
@@ -334,10 +374,17 @@ export default function AdminDashboard() {
             {getFullMonthReport(selectedStaffForReport.uid, filters.month).map((day) => {
               let color = day.status === 'absent' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' : day.status === 'leave' ? 'bg-amber-500/20 text-amber-400 border-amber-500/40' : day.status === 'holiday' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : day.status === 'upcoming' ? 'bg-white/5 text-text-muted border-white/10' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
               return (
-                <div key={day.date} className={`p-3 rounded-2xl border ${color} transition-all hover:scale-105`}>
-                  <p className="text-[10px] opacity-60 font-mono">{day.date.split('-')[2]}/{day.date.split('-')[1]}</p>
+                <div key={day.date} className={`p-3 rounded-2xl border ${color} transition-all hover:scale-105 flex flex-col justify-between`}>
+                  <p className="text-[10px] opacity-60 font-mono uppercase">{day.displayDate}</p>
                   <p className="text-xs font-black uppercase mt-1">{day.status === 'holiday' ? 'SUN' : day.status}</p>
-                  {(day.status === 'present' || day.status === 'late') && <p className="text-[10px] font-mono mt-1 opacity-80">{day.checkIn}</p>}
+                  
+                  {/* IN & OUT Times Layout */}
+                  {(day.status === 'present' || day.status === 'late') && (
+                    <div className="mt-2 space-y-0.5 border-t border-current/10 pt-1">
+                       <p className="text-[9px] font-mono opacity-90">IN: <span className="font-bold">{day.checkIn}</span></p>
+                       <p className="text-[9px] font-mono opacity-90 text-amber-200/90">OUT: <span className="font-bold">{day.checkOut}</span></p>
+                    </div>
+                  )}
                 </div>
               );
             })}
