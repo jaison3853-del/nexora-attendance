@@ -1,172 +1,118 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { FileText, Calendar, Send, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { FileText, Calendar, Clock, Send, ShieldCheck, AlertCircle, X, ChevronRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { db } from '../firebase/config';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, query, where, onSnapshot, serverTimestamp } from 'firebase/firestore';
 import toast from 'react-hot-toast';
-import { useNavigate } from 'react-router-dom';
-import emailjs from '@emailjs/browser';
 
 export default function LeaveRequest() {
   const { user } = useAuth();
-  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    type: 'Casual Leave',
-    startDate: '',
-    endDate: '',
-    reason: ''
-  });
+  const [leaves, setLeaves] = useState([]);
+  const [formData, setFormData] = useState({ type: 'Casual Leave', startDate: '', endDate: '', reason: '' });
+
+  useEffect(() => {
+    const q = query(collection(db, 'leaves'), where('userId', '==', user.uid));
+    const unsub = onSnapshot(q, (snapshot) => {
+      setLeaves(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a, b) => b.createdAt?.seconds - a.createdAt?.seconds));
+    });
+    return () => unsub();
+  }, [user.uid]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-
     try {
-      // 1. Firebase-ലേക്ക് ലീവ് റിക്വസ്റ്റ് സേവ് ചെയ്യുന്നു
       await addDoc(collection(db, 'leaves'), {
         userId: user.uid,
-        userName: user.name,
-        userEmail: user.email || 'staff@nexora.com',
+        userName: user.displayName || 'Staff',
+        userEmail: user.email,
         ...formData,
         status: 'pending',
         createdAt: serverTimestamp()
       });
-
-      // EmailJS ഡാറ്റ തയ്യാറാക്കുന്നു
-      const emailParams = {
-        staff_name: user.name,
-        leave_type: formData.type,
-        from_date: formData.startDate,
-        to_date: formData.endDate,
-        reason: formData.reason,
-      };
-
-      // 2. ഒന്നാമത്തെ അഡ്മിന് (ജെയ്‌സൺ) മെയിൽ അയക്കുന്നു
-      const email1 = emailjs.send(
-        'service_p8pt4hr',
-        'template_fgbhpoa',
-        { ...emailParams, admin_email: 'jaison3853@gmail.com' },
-        'YCJDmchHr727bPTJE'
-      );
-
-      // 3. രണ്ടാമത്തെ അഡ്മിന് (ശരത് മുരളി) മെയിൽ അയക്കുന്നു
-      const email2 = emailjs.send(
-        'service_p8pt4hr',
-        'template_fgbhpoa',
-        { ...emailParams, admin_email: 'sarathmurali33@gmail.com' },
-        'YCJDmchHr727bPTJE'
-      );
-
-      // രണ്ട് മെയിലുകളും അയച്ചു എന്ന് ഉറപ്പാക്കുന്നു
-      await Promise.all([email1, email2]);
-
-      toast.success('Leave applied! Both Admins notified.');
-      navigate('/dashboard');
+      toast.success('Mission Briefing Sent to Admin! 🚀');
+      setFormData({ type: 'Casual Leave', startDate: '', endDate: '', reason: '' });
     } catch (err) {
-      console.error("Submission Error:", err);
-      toast.error('Failed to notify admins. Please try again.');
-    } finally {
-      setLoading(false);
+      toast.error('System Failure: Try again.');
     }
+    setLoading(false);
   };
 
   return (
-    <div className="max-w-2xl mx-auto py-8 px-4">
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }} 
-        animate={{ opacity: 1, y: 0 }} 
-        className="glass rounded-3xl p-8 border border-white/5 shadow-2xl"
-      >
-        <div className="flex items-center gap-4 mb-8 border-b border-white/5 pb-6">
-          <div className="p-3 rounded-2xl bg-violet-500/20 text-violet-400">
-            <FileText size={28} />
-          </div>
-          <div>
-            <h1 className="text-2xl font-display font-bold text-text-bright">Apply for Leave</h1>
-            <p className="text-sm text-text-muted">Jaison and Sarath will be notified via email</p>
-          </div>
-        </div>
+    <div className="max-w-4xl mx-auto p-4 space-y-8">
+      
+      {/* Header */}
+      <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="text-center">
+        <h1 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-violet-500 tracking-tighter">LEAVE OPERATIONS</h1>
+        <p className="text-text-muted text-xs font-mono mt-2 uppercase tracking-[0.2em]">Request Time Off / Manage Schedule</p>
+      </motion.div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <label className="text-xs font-mono uppercase tracking-wider text-text-muted ml-1">Leave Type</label>
-              <select 
-                value={formData.type}
-                onChange={(e) => setFormData({...formData, type: e.target.value})}
-                className="input-field w-full outline-none"
-                required
-              >
-                <option value="Casual Leave">Casual Leave</option>
-                <option value="Sick Leave">Sick Leave</option>
-                <option value="Emergency Leave">Emergency Leave</option>
-                <option value="Loss of Pay">Loss of Pay</option>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        
+        {/* Form */}
+        <motion.form 
+          initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}
+          onSubmit={handleSubmit}
+          className="glass p-8 rounded-3xl border border-cyan-500/20 bg-[#020617]/50"
+        >
+          <div className="space-y-6">
+            <div>
+              <label className="text-xs font-bold text-cyan-400 uppercase tracking-widest mb-2 block">Leave Type</label>
+              <select value={formData.type} onChange={(e) => setFormData({...formData, type: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-white outline-none focus:border-cyan-500 transition-all">
+                <option className="bg-slate-900">Casual Leave</option>
+                <option className="bg-slate-900">Sick Leave</option>
+                <option className="bg-slate-900">Emergency Leave</option>
+                <option className="bg-slate-900">Other</option>
               </select>
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <label className="text-xs font-mono uppercase tracking-wider text-text-muted ml-1">Start Date</label>
-              <div className="relative">
-                <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-                <input 
-                  type="date" 
-                  value={formData.startDate}
-                  onChange={(e) => setFormData({...formData, startDate: e.target.value})}
-                  className="input-field pl-10 w-full outline-none" 
-                  required 
-                />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs font-bold text-cyan-400 uppercase tracking-widest mb-2 block">Start Date</label>
+                <input required type="date" value={formData.startDate} onChange={(e) => setFormData({...formData, startDate: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-white outline-none focus:border-cyan-500" />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-cyan-400 uppercase tracking-widest mb-2 block">End Date</label>
+                <input required type="date" value={formData.endDate} onChange={(e) => setFormData({...formData, endDate: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-white outline-none focus:border-cyan-500" />
               </div>
             </div>
-            <div className="space-y-2">
-              <label className="text-xs font-mono uppercase tracking-wider text-text-muted ml-1">End Date</label>
-              <div className="relative">
-                <Calendar size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-                <input 
-                  type="date" 
-                  value={formData.endDate}
-                  onChange={(e) => setFormData({...formData, endDate: e.target.value})}
-                  className="input-field pl-10 w-full outline-none" 
-                  required 
-                />
-              </div>
+            <div>
+              <label className="text-xs font-bold text-cyan-400 uppercase tracking-widest mb-2 block">Reason (Brief)</label>
+              <textarea required rows="3" value={formData.reason} onChange={(e) => setFormData({...formData, reason: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-white outline-none focus:border-cyan-500 resize-none" placeholder="Reason for leave..." />
             </div>
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-xs font-mono uppercase tracking-wider text-text-muted ml-1">Reason for Leave</label>
-            <textarea 
-              rows="4"
-              value={formData.reason}
-              onChange={(e) => setFormData({...formData, reason: e.target.value})}
-              className="input-field w-full py-3 resize-none outline-none"
-              placeholder="Provide a detailed reason..."
-              required
-            ></textarea>
-          </div>
-
-          <div className="pt-4 flex gap-4">
-            <button 
-              type="button" 
-              onClick={() => navigate('/dashboard')}
-              className="btn-ghost flex-1 py-4 rounded-2xl border border-white/5 font-bold hover:bg-white/5 transition-all"
-            >
-              Cancel
-            </button>
-            <button 
-              type="submit" 
-              disabled={loading}
-              className="btn-primary flex-1 py-4 rounded-2xl flex items-center justify-center gap-2 font-bold shadow-lg shadow-cyan-500/20 disabled:opacity-50"
-            >
-              {loading ? <Loader2 size={18} className="animate-spin" /> : <Send size={18} />}
-              {loading ? 'Processing...' : 'Apply Now'}
+            <button disabled={loading} type="submit" className="w-full bg-gradient-to-r from-cyan-500 to-violet-500 text-white font-black py-4 rounded-2xl flex items-center justify-center gap-2 hover:opacity-90 transition-all shadow-[0_0_20px_rgba(34,211,238,0.3)]">
+              {loading ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <><Send size={20} /> Deploy Request</>}
             </button>
           </div>
-        </form>
-      </motion.div>
+        </motion.form>
+
+        {/* History / Timeline */}
+        <motion.div 
+          initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }}
+          className="glass p-8 rounded-3xl border border-white/5 bg-white/5"
+        >
+          <h3 className="text-lg font-bold text-white mb-6 flex items-center gap-2"><Clock className="text-amber-400" size={20} /> Request Log</h3>
+          <div className="space-y-4">
+            {leaves.length === 0 && <p className="text-text-muted text-sm italic">No recent requests.</p>}
+            {leaves.map((leave) => (
+              <div key={leave.id} className="bg-black/40 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
+                <div>
+                  <p className="font-bold text-sm text-white">{leave.type}</p>
+                  <p className="text-[10px] text-text-muted">{leave.startDate} to {leave.endDate}</p>
+                </div>
+                <div className={`px-3 py-1 rounded-full text-[9px] font-bold uppercase tracking-wider border ${
+                  leave.status === 'approved' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 
+                  leave.status === 'rejected' ? 'bg-rose-500/20 text-rose-400 border-rose-500/30' : 
+                  'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                }`}>
+                  {leave.status}
+                </div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      </div>
     </div>
   );
 }
