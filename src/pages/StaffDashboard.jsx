@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  CheckCircle, XCircle, Clock, TrendingUp, Calendar, MapPin, Zap, FileText, Info, Trophy, Award, QrCode, RefreshCcw, IdCard, X, Play, Code, Database, Layers, Cpu, Star, Heart, ThumbsUp, Send, Terminal
+  CheckCircle, XCircle, Clock, TrendingUp, Calendar, MapPin, Zap, FileText, Info, Trophy, Award, QrCode, RefreshCcw, IdCard, X, Play, Code, Database, Layers, Cpu, Star, Heart, ThumbsUp, Send, Terminal, Smartphone, Flame
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -14,7 +14,6 @@ import MarkAttendance from '../components/attendance/MarkAttendance';
 import StatCard from '../components/ui/StatCard';
 import StatusBadge from '../components/ui/StatusBadge';
 import AttendanceTable from '../components/attendance/AttendanceTable';
-import welcomePoster from '../assets/poster.jpg'; 
 
 export default function StaffDashboard() {
   const { user } = useAuth();
@@ -33,7 +32,6 @@ export default function StaffDashboard() {
   const [loading, setLoading] = useState(true);
 
   // --- MODALS & EASTER EGGS 🛡️ ---
-  const [showWelcomePoster, setShowWelcomePoster] = useState(false);
   const [isIdFlipped, setIsIdFlipped] = useState(false);
   const [showDevCard, setShowDevCard] = useState(false);
   const [showMagic, setShowMagic] = useState(false);
@@ -45,8 +43,8 @@ export default function StaffDashboard() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        // 🌌 AVATAR INTRO DELAY (4.5s to fully enjoy the cinematic visual)
-        const minLoadTime = new Promise(resolve => setTimeout(resolve, 4500));
+        // 🚀 Minimalist Pulse Loader Delay
+        const minLoadTime = new Promise(resolve => setTimeout(resolve, 2500));
 
         const [today, all, _] = await Promise.all([
           getTodayAttendance(user.uid, dateKey),
@@ -78,12 +76,6 @@ export default function StaffDashboard() {
       setMyKudos(kList.sort((a, b) => b.createdAt?.seconds - a.createdAt?.seconds));
     });
 
-    if (!sessionStorage.getItem('seenChallengePoster')) {
-      // 5.5s to show poster after the Avatar Intro
-      setTimeout(() => setShowWelcomePoster(true), 5500); 
-      sessionStorage.setItem('seenChallengePoster', 'true');
-    }
-
     return () => { unsubLeaves(); unsubKudos(); if(unsubAll) unsubAll(); };
   }, [user.uid, dateKey]);
 
@@ -95,11 +87,41 @@ export default function StaffDashboard() {
     }
   }, [showMagic]);
 
-  const closeWelcomePoster = () => setShowWelcomePoster(false);
-
   const currentUserProfile = useMemo(() => {
     return allUsers.find(u => u.uid === user.uid) || user;
   }, [allUsers, user]);
+
+  // --- 🎖️ GAMIFICATION BADGES LOGIC ---
+  const myBadges = useMemo(() => {
+    const badges = [];
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    const todayRec = records.find(r => r.date === todayStr);
+
+    // 1. iPhone Target Widget (Always active)
+    badges.push({ title: "iPhone 17 Target", icon: <Smartphone size={12} />, color: "bg-purple-500/20 text-purple-400 border-purple-500/30" });
+
+    // 2. Early Bird Badge
+    if (todayRec) {
+        const getIn = (r) => r?.punchIn || r?.checkIn || r?.timeIn || r?.inTime || r?.time || r?.createdAt || "";
+        const inTime = getIn(todayRec);
+        // Checking if punched in before 9:05 AM
+        if (inTime && String(inTime) < "09:05" && !String(inTime).toLowerCase().includes('pm')) {
+            badges.push({ title: "Early Bird", icon: <Clock size={12} />, color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" });
+        }
+    }
+
+    // 3. Consistency Streak Badge
+    if (stats.present > 10) {
+        badges.push({ title: "Unstoppable", icon: <Flame size={12} />, color: "bg-orange-500/20 text-orange-400 border-orange-500/30" });
+    }
+
+    // 4. Star Badge
+    if (myKudos.length > 0) {
+        badges.push({ title: "Team Star", icon: <Star size={12} />, color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" });
+    }
+
+    return badges;
+  }, [records, stats, myKudos]);
 
   // --- 🏆 SMART LEADERBOARD (9 PM Overtime & 5:30 PM Penalty Logic) ---
   const leaderboard = useMemo(() => {
@@ -201,80 +223,33 @@ export default function StaffDashboard() {
     setIsSendingKudos(false);
   };
 
-  // --- 🌌 AVATAR MOVIE STYLE CINEMATIC INTRO 🌌 ---
+  // --- 🚀 NEW MINIMALIST PULSE LOADER ---
   if (loading) {
     return (
       <AnimatePresence mode="wait">
         <motion.div 
-          key="avatar-intro"
+          key="minimal-intro"
           initial={{ opacity: 1 }} 
-          exit={{ opacity: 0, scale: 1.1, filter: "blur(20px)" }} 
-          transition={{ duration: 1.2, ease: "easeInOut" }}
-          className="fixed inset-0 z-[99999] bg-[#010a15] flex flex-col items-center justify-center overflow-hidden px-4"
+          exit={{ opacity: 0, scale: 1.05, filter: "blur(5px)" }} 
+          transition={{ duration: 0.8, ease: "easeInOut" }}
+          className="fixed inset-0 z-[99999] bg-[#020617] flex flex-col items-center justify-center overflow-hidden px-4"
         >
-          {/* Bioluminescent Deep Glow (Pandora Forest Vibe) */}
-          <div className="absolute inset-0 flex items-center justify-center">
-             <motion.div 
-               animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.6, 0.3] }} 
-               transition={{ duration: 4, ease: "easeInOut", repeat: Infinity }}
-               className="w-[300px] h-[300px] md:w-[600px] md:h-[600px] bg-[#0ea5e9]/20 blur-[120px] md:blur-[180px] rounded-full" 
-             />
-          </div>
-
-          {/* Floating Light Particles (Seeds of the Tree of Souls) */}
-          {Array.from({ length: 25 }).map((_, i) => (
-             <motion.div
-               key={`particle-${i}`}
-               initial={{ 
-                 y: '100vh', 
-                 x: (Math.random() - 0.5) * window.innerWidth,
-                 opacity: 0, scale: 0
-               }}
-               animate={{ 
-                 y: '-20vh',
-                 opacity: [0, 0.8, 1, 0],
-                 scale: [0, Math.random() * 1.5 + 0.5, 0]
-               }}
-               transition={{ 
-                 duration: Math.random() * 4 + 3, 
-                 repeat: Infinity, 
-                 delay: Math.random() * 3,
-                 ease: "linear"
-               }}
-               className="absolute w-1 h-1 md:w-2 md:h-2 bg-cyan-200 rounded-full shadow-[0_0_15px_#22d3ee]"
-             />
-          ))}
-          
-          <div className="z-10 flex flex-col items-center w-full text-center">
-            
-            {/* Elegant Subtitle */}
-            <motion.p 
-              initial={{ opacity: 0, y: 20, letterSpacing: "0.2em" }}
-              animate={{ opacity: 1, y: 0, letterSpacing: "0.6em" }}
-              transition={{ duration: 1.5, ease: "easeOut" }}
-              className="text-cyan-200/70 font-light text-[10px] md:text-xs uppercase mb-6"
+          <div className="flex flex-col items-center justify-center">
+            <motion.div 
+              animate={{ opacity: [0.3, 1, 0.3], scale: [0.98, 1.02, 0.98] }} 
+              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+              className="text-2xl md:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 tracking-[0.3em] drop-shadow-[0_0_15px_rgba(34,211,238,0.5)]"
             >
-              A Vision By
-            </motion.p>
-            
-            {/* BIG CREATOR NAME - Majestic Glowing Text */}
-            <motion.h1 
-              initial={{ opacity: 0, scale: 0.9, filter: "blur(20px)" }}
-              animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
-              transition={{ duration: 2.5, delay: 0.8, ease: "easeOut" }}
-              className="text-5xl sm:text-6xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-b from-cyan-50 via-cyan-300 to-blue-600 tracking-wider"
-              style={{ textShadow: '0 0 40px rgba(34,211,238,0.5)' }}
-            >
-              JAISON PIOUS
-            </motion.h1>
-            
-            {/* Gentle Initializing Text */}
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 3, duration: 1.5 }} className="mt-16 flex flex-col items-center gap-3">
-               <p className="text-cyan-300/60 font-mono text-[9px] md:text-[11px] uppercase tracking-[0.4em] animate-pulse px-2">
-                 Entering Nexora SM...
-               </p>
+              NEXORA SM
             </motion.div>
             
+            <motion.div 
+              className="h-[2px] bg-gradient-to-r from-transparent via-cyan-500 to-transparent mt-4 rounded-full"
+              initial={{ width: 0, opacity: 0 }}
+              animate={{ width: ["0%", "80%", "0%"], opacity: [0, 1, 0] }}
+              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+              style={{ maxWidth: '150px' }}
+            />
           </div>
         </motion.div>
       </AnimatePresence>
@@ -384,19 +359,7 @@ export default function StaffDashboard() {
         )}
       </AnimatePresence>
 
-      {/* --- WELCOME POSTER MODAL --- */}
-      <AnimatePresence>
-        {showWelcomePoster && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-[999] p-4" onClick={closeWelcomePoster}>
-            <motion.div initial={{ scale: 0.8, y: 50 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.8, y: 50, opacity: 0 }} className="bg-[#0f172a] border border-cyan-500/30 rounded-3xl max-w-md w-full relative overflow-hidden shadow-[0_0_50px_rgba(34,211,238,0.15)]" onClick={(e) => e.stopPropagation()}>
-              <button onClick={closeWelcomePoster} className="absolute top-4 right-4 z-10 p-2 bg-black/50 hover:bg-rose-500/80 rounded-full text-white/80 hover:text-white transition-all"><X size={20} /></button>
-              <div className="p-1"><img src={welcomePoster} alt="Challenge" className="w-full h-auto rounded-2xl block"/></div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* --- DASHBOARD HEADER --- */}
+      {/* --- DASHBOARD HEADER & GAMIFICATION --- */}
       <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
@@ -408,6 +371,21 @@ export default function StaffDashboard() {
         </div>
         <div className="flex items-center gap-2">{todayRecord && <StatusBadge status={todayRecord.status} />}</div>
       </motion.div>
+
+      {/* --- 🎖️ DYNAMIC BADGES ROW --- */}
+      <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
+         {myBadges.map((badge, i) => (
+            <motion.div 
+               initial={{ opacity: 0, scale: 0.8 }} 
+               animate={{ opacity: 1, scale: 1 }} 
+               transition={{ delay: i * 0.1 }}
+               key={i} 
+               className={`${badge.color} px-3 py-1.5 rounded-full text-[10px] font-bold border flex items-center gap-1.5 shadow-sm whitespace-nowrap`}
+            >
+                {badge.icon} {badge.title}
+            </motion.div>
+         ))}
+      </div>
 
       <MarkAttendance onMarked={setTodayRecord} todayRecord={todayRecord} />
 
