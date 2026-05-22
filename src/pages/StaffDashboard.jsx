@@ -32,7 +32,7 @@ export default function StaffDashboard() {
   const [loading, setLoading] = useState(true);
 
   // --- MODALS & EASTER EGGS 🛡️ ---
-  const [showStarPopup, setShowStarPopup] = useState(false); // 🌟 New Star Popup State
+  const [showStarPopup, setShowStarPopup] = useState(false); 
   const [isIdFlipped, setIsIdFlipped] = useState(false);
   const [showDevCard, setShowDevCard] = useState(false);
   const [showMagic, setShowMagic] = useState(false);
@@ -151,44 +151,47 @@ export default function StaffDashboard() {
       return null;
     };
 
-    const monthStats = allUsers.map(u => {
-      const userRecords = allRecords.filter(r => r.uid === u.uid && r.date?.startsWith(currentMonth));
-      let totalSecs = 0; let presentDays = 0;
+    // 🛑 JAISON-E PERFORMANCE LIST-IL NINNUM LEADERBOARD-IL NINNUM OZHIVAKKI 🛑
+    const monthStats = allUsers
+      .filter(u => !u.name?.toLowerCase().includes('jaison')) 
+      .map(u => {
+        const userRecords = allRecords.filter(r => r.uid === u.uid && r.date?.startsWith(currentMonth));
+        let totalSecs = 0; let presentDays = 0;
 
-      userRecords.forEach(r => {
-        const inVal = getInTime(r);
-        if (!inVal || String(inVal).includes('--') || String(inVal).includes('LEAVE')) return;
-        const inSec = parseTime(inVal);
-        if (inSec === null) return;
-        presentDays++;
-        
-        const outVal = getOutTime(r);
-        let outSec = parseTime(outVal);
-        const isWorking = !outVal || String(outVal).toLowerCase().includes('work');
-        
-        if (isWorking) { 
-           if (r.date === todayDateStr) {
-               if (currentSecs < 21 * 3600) outSec = currentSecs; 
-               else outSec = 17.5 * 3600; 
-           } else {
-               outSec = 17.5 * 3600; 
-           }
-        }
+        userRecords.forEach(r => {
+          const inVal = getInTime(r);
+          if (!inVal || String(inVal).includes('--') || String(inVal).includes('LEAVE')) return;
+          const inSec = parseTime(inVal);
+          if (inSec === null) return;
+          presentDays++;
+          
+          const outVal = getOutTime(r);
+          let outSec = parseTime(outVal);
+          const isWorking = !outVal || String(outVal).toLowerCase().includes('work');
+          
+          if (isWorking) { 
+             if (r.date === todayDateStr) {
+                 if (currentSecs < 21 * 3600) outSec = currentSecs; 
+                 else outSec = 17.5 * 3600; 
+             } else {
+                 outSec = 17.5 * 3600; 
+             }
+          }
 
-        if (outSec !== null) {
-          let diff = outSec - inSec;
-          if (diff < 0) diff += 24 * 3600; 
-          totalSecs += diff;
-        }
+          if (outSec !== null) {
+            let diff = outSec - inSec;
+            if (diff < 0) diff += 24 * 3600; 
+            totalSecs += diff;
+          }
+        });
+        
+        const totalHours = Math.floor(totalSecs / 3600);
+        const totalMinutes = Math.floor((totalSecs % 3600) / 60);
+        return { 
+          name: u.name, uid: u.uid, totalSecs, presentDays, photoURL: u.photoURL, designation: u.designation,
+          workTimeStr: `${totalHours}h ${totalMinutes}m` 
+        };
       });
-      
-      const totalHours = Math.floor(totalSecs / 3600);
-      const totalMinutes = Math.floor((totalSecs % 3600) / 60);
-      return { 
-        name: u.name, uid: u.uid, totalSecs, presentDays, photoURL: u.photoURL, designation: u.designation,
-        workTimeStr: `${totalHours}h ${totalMinutes}m` 
-      };
-    });
 
     return monthStats.sort((a, b) => b.totalSecs - a.totalSecs).slice(0, 3);
   }, [allRecords, allUsers, dateKey]);
@@ -214,7 +217,7 @@ export default function StaffDashboard() {
     setIsSendingKudos(false);
   };
 
-  // 🌟 TOP PERFORMER FOR POPUP
+  // 🌟 TOP PERFORMER FOR POPUP (Automated based on modified leaderboard)
   const topPerformer = leaderboard.length > 0 ? leaderboard[0] : null;
 
   // --- 🚀 MINIMALIST PULSE LOADER ---
@@ -244,7 +247,7 @@ export default function StaffDashboard() {
     );
   }
 
-  const terminalLines = ["> INITIATING SYSTEM OVERRIDE...", "> BYPASSING SECURITY PROTOCOLS...", "> DECRYPTING NEXORA MAINFRAME...", "> ACCESS GRANTED."];
+  const terminalLines = [". INITIATING SYSTEM OVERRIDE...", ". BYPASSING SECURITY PROTOCOLS...", ". DECRYPTING NEXORA MAINFRAME...", ". ACCESS GRANTED."];
 
   return (
     <div className="relative space-y-6 max-w-5xl mx-auto pb-10 px-4">
@@ -264,7 +267,7 @@ export default function StaffDashboard() {
                    {topPerformer.photoURL ? (
                      <img src={topPerformer.photoURL} alt={topPerformer.name} className="w-full h-full object-cover" />
                    ) : (
-                     <span className="text-5xl font-black text-white">{topPerformer.name?.charAt(0)}</span>
+                     <span className="text-5xl font-black text-white">{topPerformer.name?.charAt(0).toUpperCase()}</span>
                    )}
                 </div>
                 <div className="absolute inset-0 rounded-full border-4 border-yellow-400 animate-ping opacity-50"></div>
