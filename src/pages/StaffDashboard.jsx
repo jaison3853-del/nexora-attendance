@@ -32,6 +32,7 @@ export default function StaffDashboard() {
   const [loading, setLoading] = useState(true);
 
   // --- MODALS & EASTER EGGS 🛡️ ---
+  const [showStarPopup, setShowStarPopup] = useState(false); // 🌟 New Star Popup State
   const [isIdFlipped, setIsIdFlipped] = useState(false);
   const [showDevCard, setShowDevCard] = useState(false);
   const [showMagic, setShowMagic] = useState(false);
@@ -76,6 +77,13 @@ export default function StaffDashboard() {
       setMyKudos(kList.sort((a, b) => b.createdAt?.seconds - a.createdAt?.seconds));
     });
 
+    // 🌟 SHOW STAR POPUP ONCE PER DAY
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    if (!sessionStorage.getItem(`seenStar_${todayStr}`)) {
+      setTimeout(() => setShowStarPopup(true), 3500); 
+      sessionStorage.setItem(`seenStar_${todayStr}`, 'true');
+    }
+
     return () => { unsubLeaves(); unsubKudos(); if(unsubAll) unsubAll(); };
   }, [user.uid, dateKey]);
 
@@ -97,25 +105,20 @@ export default function StaffDashboard() {
     const todayStr = format(new Date(), 'yyyy-MM-dd');
     const todayRec = records.find(r => r.date === todayStr);
 
-    // 1. iPhone Target Widget (Always active)
     badges.push({ title: "iPhone 17 Target", icon: <Smartphone size={12} />, color: "bg-purple-500/20 text-purple-400 border-purple-500/30" });
 
-    // 2. Early Bird Badge
     if (todayRec) {
         const getIn = (r) => r?.punchIn || r?.checkIn || r?.timeIn || r?.inTime || r?.time || r?.createdAt || "";
         const inTime = getIn(todayRec);
-        // Checking if punched in before 9:05 AM
         if (inTime && String(inTime) < "09:05" && !String(inTime).toLowerCase().includes('pm')) {
             badges.push({ title: "Early Bird", icon: <Clock size={12} />, color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" });
         }
     }
 
-    // 3. Consistency Streak Badge
     if (stats.present > 10) {
         badges.push({ title: "Unstoppable", icon: <Flame size={12} />, color: "bg-orange-500/20 text-orange-400 border-orange-500/30" });
     }
 
-    // 4. Star Badge
     if (myKudos.length > 0) {
         badges.push({ title: "Team Star", icon: <Star size={12} />, color: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" });
     }
@@ -136,20 +139,13 @@ export default function StaffDashboard() {
     const parseTime = (timeStr) => {
       if (!timeStr) return null;
       try {
-        if (typeof timeStr.toDate === 'function') {
-           const d = timeStr.toDate();
-           return (d.getHours() * 3600) + (d.getMinutes() * 60);
-        }
-        if (timeStr instanceof Date) {
-           return (timeStr.getHours() * 3600) + (timeStr.getMinutes() * 60);
-        }
+        if (typeof timeStr.toDate === 'function') { const d = timeStr.toDate(); return (d.getHours() * 3600) + (d.getMinutes() * 60); }
+        if (timeStr instanceof Date) return (timeStr.getHours() * 3600) + (timeStr.getMinutes() * 60);
         const str = String(timeStr).toLowerCase();
         const match = str.match(/(\d{1,2}):(\d{1,2})/); 
         if (!match) return null;
-        let h = parseInt(match[1], 10);
-        let m = parseInt(match[2], 10);
-        if (str.includes('pm') && h < 12) h += 12;
-        if (str.includes('am') && h === 12) h = 0;
+        let h = parseInt(match[1], 10); let m = parseInt(match[2], 10);
+        if (str.includes('pm') && h < 12) h += 12; if (str.includes('am') && h === 12) h = 0;
         return (h * 3600) + (m * 60);
       } catch(e) {}
       return null;
@@ -170,14 +166,10 @@ export default function StaffDashboard() {
         let outSec = parseTime(outVal);
         const isWorking = !outVal || String(outVal).toLowerCase().includes('work');
         
-        // 🛑 PENALTY & OVERTIME LOGIC
         if (isWorking) { 
            if (r.date === todayDateStr) {
-               if (currentSecs < 21 * 3600) {
-                   outSec = currentSecs; 
-               } else {
-                   outSec = 17.5 * 3600; 
-               }
+               if (currentSecs < 21 * 3600) outSec = currentSecs; 
+               else outSec = 17.5 * 3600; 
            } else {
                outSec = 17.5 * 3600; 
            }
@@ -217,37 +209,33 @@ export default function StaffDashboard() {
       setKudosForm({ receiverId: '', badge: '🌟 Star Performer', message: '' });
       alert('Kudos Sent Successfully! 🎉');
     } catch (err) {
-      console.error("Error sending kudos: ", err);
       alert('Failed to send. Try again later.');
     }
     setIsSendingKudos(false);
   };
 
-  // --- 🚀 NEW MINIMALIST PULSE LOADER ---
+  // 🌟 TOP PERFORMER FOR POPUP
+  const topPerformer = leaderboard.length > 0 ? leaderboard[0] : null;
+
+  // --- 🚀 MINIMALIST PULSE LOADER ---
   if (loading) {
     return (
       <AnimatePresence mode="wait">
         <motion.div 
           key="minimal-intro"
-          initial={{ opacity: 1 }} 
-          exit={{ opacity: 0, scale: 1.05, filter: "blur(5px)" }} 
-          transition={{ duration: 0.8, ease: "easeInOut" }}
+          initial={{ opacity: 1 }} exit={{ opacity: 0, scale: 1.05, filter: "blur(5px)" }} transition={{ duration: 0.8, ease: "easeInOut" }}
           className="fixed inset-0 z-[99999] bg-[#020617] flex flex-col items-center justify-center overflow-hidden px-4"
         >
           <div className="flex flex-col items-center justify-center">
             <motion.div 
-              animate={{ opacity: [0.3, 1, 0.3], scale: [0.98, 1.02, 0.98] }} 
-              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+              animate={{ opacity: [0.3, 1, 0.3], scale: [0.98, 1.02, 0.98] }} transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
               className="text-2xl md:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-blue-500 tracking-[0.3em] drop-shadow-[0_0_15px_rgba(34,211,238,0.5)]"
             >
               NEXORA SM
             </motion.div>
-            
             <motion.div 
               className="h-[2px] bg-gradient-to-r from-transparent via-cyan-500 to-transparent mt-4 rounded-full"
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: ["0%", "80%", "0%"], opacity: [0, 1, 0] }}
-              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+              initial={{ width: 0, opacity: 0 }} animate={{ width: ["0%", "80%", "0%"], opacity: [0, 1, 0] }} transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
               style={{ maxWidth: '150px' }}
             />
           </div>
@@ -256,13 +244,49 @@ export default function StaffDashboard() {
     );
   }
 
-  const terminalLines = [
-    "> INITIATING SYSTEM OVERRIDE...", "> BYPASSING SECURITY PROTOCOLS...", "> DECRYPTING NEXORA MAINFRAME...", "> ACCESS GRANTED."
-  ];
+  const terminalLines = ["> INITIATING SYSTEM OVERRIDE...", "> BYPASSING SECURITY PROTOCOLS...", "> DECRYPTING NEXORA MAINFRAME...", "> ACCESS GRANTED."];
 
   return (
     <div className="relative space-y-6 max-w-5xl mx-auto pb-10 px-4">
       
+      {/* --- 🌟 SPOTLIGHT: STAR OF THE MONTH POPUP --- */}
+      <AnimatePresence>
+        {showStarPopup && topPerformer && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[999] p-4" onClick={() => setShowStarPopup(false)}>
+            <motion.div initial={{ scale: 0.8, y: 50 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.8, y: 50, opacity: 0 }} className="bg-gradient-to-b from-[#0f172a] to-[#020617] border border-yellow-500/30 rounded-3xl max-w-sm w-full relative overflow-hidden shadow-[0_0_50px_rgba(234,179,8,0.15)] flex flex-col items-center p-8 text-center" onClick={(e) => e.stopPropagation()}>
+              <button onClick={() => setShowStarPopup(false)} className="absolute top-4 right-4 z-10 p-2 bg-black/50 hover:bg-rose-500/80 rounded-full text-white/80 hover:text-white transition-all"><X size={20} /></button>
+              
+              <Trophy size={48} className="text-yellow-400 mb-4 animate-bounce" />
+              <h2 className="text-yellow-400 font-black tracking-widest uppercase text-xs mb-6">Star of the Month</h2>
+              
+              <div className="relative mb-4">
+                <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-yellow-400 shadow-[0_0_30px_rgba(234,179,8,0.5)] z-10 relative bg-[#0f172a] flex items-center justify-center">
+                   {topPerformer.photoURL ? (
+                     <img src={topPerformer.photoURL} alt={topPerformer.name} className="w-full h-full object-cover" />
+                   ) : (
+                     <span className="text-5xl font-black text-white">{topPerformer.name?.charAt(0)}</span>
+                   )}
+                </div>
+                <div className="absolute inset-0 rounded-full border-4 border-yellow-400 animate-ping opacity-50"></div>
+              </div>
+              
+              <h1 className="text-2xl font-bold text-white mb-1">{topPerformer.name}</h1>
+              <p className="text-xs text-text-muted mb-4">{topPerformer.designation || 'Nexora Team'}</p>
+              
+              <div className="bg-yellow-500/10 border border-yellow-500/30 px-4 py-2 rounded-xl mb-6 w-full">
+                <p className="text-yellow-400 font-mono text-sm font-bold flex items-center justify-center gap-2">
+                  <Clock size={14} /> Total Work: {topPerformer.workTimeStr}
+                </p>
+              </div>
+              
+              <button onClick={() => setShowStarPopup(false)} className="w-full bg-gradient-to-r from-yellow-500 to-amber-600 text-black font-black py-3 rounded-xl hover:opacity-90 transition-opacity">
+                Awesome! 👏
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* --- 👏 SEND KUDOS MODAL --- */}
       <AnimatePresence>
         {showKudosModal && (
@@ -376,11 +400,8 @@ export default function StaffDashboard() {
       <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
          {myBadges.map((badge, i) => (
             <motion.div 
-               initial={{ opacity: 0, scale: 0.8 }} 
-               animate={{ opacity: 1, scale: 1 }} 
-               transition={{ delay: i * 0.1 }}
-               key={i} 
-               className={`${badge.color} px-3 py-1.5 rounded-full text-[10px] font-bold border flex items-center gap-1.5 shadow-sm whitespace-nowrap`}
+               initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.1 }}
+               key={i} className={`${badge.color} px-3 py-1.5 rounded-full text-[10px] font-bold border flex items-center gap-1.5 shadow-sm whitespace-nowrap`}
             >
                 {badge.icon} {badge.title}
             </motion.div>
