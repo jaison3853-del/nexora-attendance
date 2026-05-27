@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  CheckCircle, XCircle, Clock, TrendingUp, Calendar, MapPin, Zap, FileText, Info, Trophy, Award, QrCode, RefreshCcw, IdCard, X, Play, Code, Database, Layers, Cpu, Star, Heart, ThumbsUp, Send, Terminal, Smartphone, Flame
+  CheckCircle, XCircle, Clock, TrendingUp, Calendar, MapPin, Zap, FileText, Info, Trophy, Award, QrCode, RefreshCcw, IdCard, X, Play, Code, Database, Layers, Cpu, Star, Heart, ThumbsUp, Send, Terminal, Smartphone, Flame, ExternalLink
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -14,6 +14,11 @@ import MarkAttendance from '../components/attendance/MarkAttendance';
 import StatCard from '../components/ui/StatCard';
 import StatusBadge from '../components/ui/StatusBadge';
 import AttendanceTable from '../components/attendance/AttendanceTable';
+
+// 📸 BIRTHDAY PHOTO & CONFIG
+import jointBirthdayPhoto from '../assets/sreeja_divya_bday.jpg'; 
+const BIRTHDAY_TEXT_DISPLAY = "Sreeja V C & Divya Vinod"; 
+const WISH_LINK = "https://happybdysreejaanddivya.netlify.app/";
 
 export default function StaffDashboard() {
   const { user } = useAuth();
@@ -32,6 +37,7 @@ export default function StaffDashboard() {
   const [loading, setLoading] = useState(true);
 
   // --- MODALS & EASTER EGGS 🛡️ ---
+  const [birthdayStep, setBirthdayStep] = useState(0); // 0: Hide, 1: Glitch, 2: Popup
   const [showStarPopup, setShowStarPopup] = useState(false); 
   const [isIdFlipped, setIsIdFlipped] = useState(false);
   const [showDevCard, setShowDevCard] = useState(false);
@@ -77,15 +83,26 @@ export default function StaffDashboard() {
       setMyKudos(kList.sort((a, b) => b.createdAt?.seconds - a.createdAt?.seconds));
     });
 
-    // 🌟 SHOW STAR POPUP ONCE PER DAY
+    // 🌟 POPUP SEQUENCER: BIRTHDAY FIRST, THEN STAR POPUP
     const todayStr = format(new Date(), 'yyyy-MM-dd');
-    if (!sessionStorage.getItem(`seenStar_${todayStr}`)) {
+    if (!sessionStorage.getItem(`seenBday_${todayStr}`)) {
+      setTimeout(() => setBirthdayStep(1), 3000); 
+      sessionStorage.setItem(`seenBday_${todayStr}`, 'true');
+    } else if (!sessionStorage.getItem(`seenStar_${todayStr}`)) {
       setTimeout(() => setShowStarPopup(true), 3500); 
       sessionStorage.setItem(`seenStar_${todayStr}`, 'true');
     }
 
     return () => { unsubLeaves(); unsubKudos(); if(unsubAll) unsubAll(); };
   }, [user.uid, dateKey]);
+
+  // BIRTHDAY GLITCH TIMING
+  useEffect(() => {
+    if (birthdayStep === 1) {
+      const timer = setTimeout(() => setBirthdayStep(2), 2200);
+      return () => clearTimeout(timer);
+    }
+  }, [birthdayStep]);
 
   useEffect(() => {
     if (showMagic) {
@@ -217,7 +234,7 @@ export default function StaffDashboard() {
     setIsSendingKudos(false);
   };
 
-  // 🌟 TOP PERFORMER FOR POPUP (Automated based on modified leaderboard)
+  // 🌟 TOP PERFORMER FOR POPUP
   const topPerformer = leaderboard.length > 0 ? leaderboard[0] : null;
 
   // --- 🚀 MINIMALIST PULSE LOADER ---
@@ -252,9 +269,55 @@ export default function StaffDashboard() {
   return (
     <div className="relative space-y-6 max-w-5xl mx-auto pb-10 px-4">
       
+      {/* --- 🎂 SINGLE PHOTO BIRTHDAY SURPRISE POPUP --- */}
+      <AnimatePresence>
+        {birthdayStep === 1 && (
+          <motion.div className="fixed inset-0 bg-black z-[99999] flex flex-col items-center justify-center px-4">
+            <motion.div animate={{ opacity: [1, 0, 1], scale: [1, 1.05, 1] }} transition={{ repeat: Infinity, duration: 0.1 }}>
+                <Terminal size={60} className="text-red-500 mb-4 mx-auto" />
+                <h2 className="text-red-500 font-mono text-2xl md:text-4xl font-black text-center uppercase tracking-widest text-balance leading-snug">Critical Event <br/>Detected</h2>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {birthdayStep === 2 && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/90 backdrop-blur-xl z-[99999] flex items-center justify-center p-4">
+             {/* Hologram Effect Background */}
+             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="w-[300px] h-[300px] md:w-[600px] md:h-[600px] bg-cyan-500/10 blur-[120px] rounded-full animate-pulse" />
+             </div>
+
+             <div className="bg-gradient-to-b from-[#0f172a] to-black border border-cyan-500/30 w-full max-w-lg rounded-[2.5rem] p-8 text-center relative shadow-[0_0_50px_rgba(34,211,238,0.2)]">
+                <button onClick={() => setBirthdayStep(0)} className="absolute top-6 right-6 z-10 p-2 bg-black/50 hover:bg-cyan-500/20 rounded-full text-white/40 hover:text-white transition-colors"><X size={24}/></button>
+                
+                {/* 📸 സ്പോട്ട്‌ലൈറ്റ് : രണ്ടുപേരും ഒന്നിച്ചുള്ള സിംഗിൾ ഫോട്ടോ */}
+                <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ delay: 0.3 }} className="flex justify-center mb-8 relative z-10">
+                   <div className="w-full max-w-[320px] aspect-[16/10] rounded-3xl overflow-hidden border-4 border-cyan-400 shadow-[0_0_40px_rgba(34,211,238,0.5)] bg-slate-800 p-1">
+                      <img src={jointBirthdayPhoto} alt="Birthday Duo" className="w-full h-full object-cover rounded-2xl" />
+                   </div>
+                   <div className="w-40 h-5 bg-cyan-400/40 rounded-[100%] blur-md mt-4 absolute -bottom-6 animate-pulse"></div>
+                </motion.div>
+
+                <h1 className="text-3xl font-black text-white mb-2 tracking-tighter">Double Trouble! 🎂</h1>
+                <p className="text-cyan-400 font-mono text-xs md:text-sm mb-8 uppercase tracking-[0.2em]">{BIRTHDAY_TEXT_DISPLAY}</p>
+                
+                <div className="space-y-3">
+                   <button 
+                    onClick={() => window.open(WISH_LINK, '_blank')}
+                    className="w-full bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-600 text-white font-black py-4 rounded-2xl shadow-[0_0_25px_rgba(34,211,238,0.4)] hover:scale-[1.02] transition-transform flex items-center justify-center gap-2"
+                   >
+                     TAP TO OPEN SURPRISE <ExternalLink size={18} />
+                   </button>
+                   <button onClick={() => setBirthdayStep(0)} className="text-white/30 text-[10px] font-bold uppercase tracking-[0.3em] hover:text-white transition-colors">Skip to Dashboard</button>
+                </div>
+             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* --- 🌟 SPOTLIGHT: STAR OF THE MONTH POPUP --- */}
       <AnimatePresence>
-        {showStarPopup && topPerformer && (
+        {showStarPopup && topPerformer && birthdayStep === 0 && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[999] p-4" onClick={() => setShowStarPopup(false)}>
             <motion.div initial={{ scale: 0.8, y: 50 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.8, y: 50, opacity: 0 }} className="bg-gradient-to-b from-[#0f172a] to-[#020617] border border-yellow-500/30 rounded-3xl max-w-sm w-full relative overflow-hidden shadow-[0_0_50px_rgba(234,179,8,0.15)] flex flex-col items-center p-8 text-center" onClick={(e) => e.stopPropagation()}>
               <button onClick={() => setShowStarPopup(false)} className="absolute top-4 right-4 z-10 p-2 bg-black/50 hover:bg-rose-500/80 rounded-full text-white/80 hover:text-white transition-all"><X size={20} /></button>
