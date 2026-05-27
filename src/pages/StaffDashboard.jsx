@@ -17,7 +17,7 @@ import AttendanceTable from '../components/attendance/AttendanceTable';
 
 // 📸 BIRTHDAY PHOTO & CONFIG
 import jointBirthdayPhoto from '../assets/sreeja_divya_bday.jpg'; 
-const BIRTHDAY_TEXT_DISPLAY = "Sreeja V C & Divya Vinod"; 
+const BIRTHDAY_TEXT_DISPLAY = "Sreeja V v & Divya Vinod"; 
 const WISH_LINK = "https://happybdysreejaanddivya.netlify.app/";
 
 export default function StaffDashboard() {
