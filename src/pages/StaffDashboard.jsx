@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  CheckCircle, XCircle, Clock, TrendingUp, Calendar, MapPin, Zap, FileText, Info, Trophy, Award, QrCode, RefreshCcw, IdCard, X, Play, Code, Database, Layers, Cpu, Star, Heart, ThumbsUp, Send, Terminal, Smartphone, Flame, Gift, ExternalLink
+  CheckCircle, XCircle, Clock, TrendingUp, Calendar, MapPin, Zap, FileText, Info, Trophy, Award, QrCode, RefreshCcw, IdCard, X, Play, Code, Database, Layers, Cpu, Star, Heart, ThumbsUp, Send, Terminal, Smartphone, Flame
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -14,11 +14,6 @@ import MarkAttendance from '../components/attendance/MarkAttendance';
 import StatCard from '../components/ui/StatCard';
 import StatusBadge from '../components/ui/StatusBadge';
 import AttendanceTable from '../components/attendance/AttendanceTable';
-
-// 📸 BIRTHDAY PHOTO & CONFIG
-import jointBirthdayPhoto from '../assets/sreeja_divya_bday.jpg'; 
-const BIRTHDAY_TEXT_DISPLAY = "Sreeja V v & Divya Vinod"; 
-const WISH_LINK = "https://happybdysreejaanddivya.netlify.app/";
 
 export default function StaffDashboard() {
   const { user } = useAuth();
@@ -37,7 +32,6 @@ export default function StaffDashboard() {
   const [loading, setLoading] = useState(true);
 
   // --- MODALS & EASTER EGGS 🛡️ ---
-  const [birthdayStep, setBirthdayStep] = useState(0); // 0: Hide, 1: Glitch, 2: Popup
   const [showStarPopup, setShowStarPopup] = useState(false); 
   const [isIdFlipped, setIsIdFlipped] = useState(false);
   const [showDevCard, setShowDevCard] = useState(false);
@@ -83,24 +77,15 @@ export default function StaffDashboard() {
       setMyKudos(kList.sort((a, b) => b.createdAt?.seconds - a.createdAt?.seconds));
     });
 
-    // 🌟 ALWAYS SHOW BIRTHDAY POPUP ON LOAD (Removed sessionStorage)
-    const bdayTimer = setTimeout(() => setBirthdayStep(1), 3000); 
-
-    return () => { 
-      unsubLeaves(); 
-      unsubKudos(); 
-      if(unsubAll) unsubAll(); 
-      clearTimeout(bdayTimer);
-    };
-  }, [user.uid, dateKey]);
-
-  // BIRTHDAY GLITCH TIMING
-  useEffect(() => {
-    if (birthdayStep === 1) {
-      const timer = setTimeout(() => setBirthdayStep(2), 2200);
-      return () => clearTimeout(timer);
+    // 🌟 SHOW STAR POPUP ONCE PER DAY
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    if (!sessionStorage.getItem(`seenStar_${todayStr}`)) {
+      setTimeout(() => setShowStarPopup(true), 3500); 
+      sessionStorage.setItem(`seenStar_${todayStr}`, 'true');
     }
-  }, [birthdayStep]);
+
+    return () => { unsubLeaves(); unsubKudos(); if(unsubAll) unsubAll(); };
+  }, [user.uid, dateKey]);
 
   useEffect(() => {
     if (showMagic) {
@@ -232,7 +217,7 @@ export default function StaffDashboard() {
     setIsSendingKudos(false);
   };
 
-  // 🌟 TOP PERFORMER FOR POPUP
+  // 🌟 TOP PERFORMER FOR POPUP (Automated based on modified leaderboard)
   const topPerformer = leaderboard.length > 0 ? leaderboard[0] : null;
 
   // --- 🚀 MINIMALIST PULSE LOADER ---
@@ -267,56 +252,9 @@ export default function StaffDashboard() {
   return (
     <div className="relative space-y-6 max-w-5xl mx-auto pb-10 px-4">
       
-      {/* --- 🎂 SINGLE PHOTO BIRTHDAY SURPRISE POPUP (MODERN FONT & AUTO ADJUST SIZE) --- */}
-      <AnimatePresence>
-        {birthdayStep === 1 && (
-          <motion.div className="fixed inset-0 bg-black z-[99999] flex flex-col items-center justify-center px-4">
-            <motion.div animate={{ opacity: [1, 0, 1], scale: [1, 1.05, 1] }} transition={{ repeat: Infinity, duration: 0.1 }}>
-                <Terminal size={60} className="text-red-500 mb-4 mx-auto" />
-                <h2 className="text-red-500 font-mono text-2xl md:text-4xl font-black text-center uppercase tracking-widest text-balance leading-snug">Critical Event <br/>Detected</h2>
-            </motion.div>
-          </motion.div>
-        )}
-
-        {birthdayStep === 2 && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/90 backdrop-blur-xl z-[99999] flex items-center justify-center p-4">
-             {/* Hologram Effect Background */}
-             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="w-[300px] h-[300px] md:w-[600px] md:h-[600px] bg-cyan-500/10 blur-[120px] rounded-full animate-pulse" />
-             </div>
-
-             <div className="bg-gradient-to-b from-[#0f172a] to-black border border-cyan-500/30 w-full max-w-lg rounded-[2.5rem] p-8 text-center relative shadow-[0_0_50px_rgba(34,211,238,0.2)]">
-                <button onClick={() => setBirthdayStep(0)} className="absolute top-6 right-6 z-10 p-2 bg-black/50 hover:bg-cyan-500/20 rounded-full text-white/40 hover:text-white transition-colors"><X size={24}/></button>
-                
-                {/* 📸 സ്പോട്ട്‌ലൈറ്റ് : തല വെട്ടിപ്പോകാതിരിക്കാൻ h-auto ആക്കി മാറ്റി */}
-                <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ delay: 0.3 }} className="flex justify-center mb-8 relative z-10">
-                   <div className="w-full max-w-[380px] rounded-3xl overflow-hidden border-4 border-cyan-400 shadow-[0_0_40px_rgba(34,211,238,0.5)] bg-[#0f172a] p-1 flex items-center justify-center">
-                      <img src={jointBirthdayPhoto} alt="Birthday Duo" className="w-full h-auto object-contain rounded-2xl" />
-                   </div>
-                   <div className="w-40 h-5 bg-cyan-400/40 rounded-[100%] blur-md mt-4 absolute -bottom-6 animate-pulse"></div>
-                </motion.div>
-
-                {/* മോഡേൺ ഫോണ്ട് സ്റ്റൈൽ (Modern Bold Typography) */}
-                <h1 className="text-4xl md:text-5xl font-black text-white mb-2 tracking-tight drop-shadow-md">Double Trouble! 🎂</h1>
-                <p className="text-cyan-400 font-bold text-sm md:text-base mb-8 uppercase tracking-[0.2em]">{BIRTHDAY_TEXT_DISPLAY}</p>
-                
-                <div className="space-y-3">
-                   <button 
-                    onClick={() => window.open(WISH_LINK, '_blank')}
-                    className="w-full bg-gradient-to-r from-cyan-500 via-blue-500 to-purple-600 text-white font-black py-4 rounded-2xl shadow-[0_0_25px_rgba(34,211,238,0.4)] hover:scale-[1.02] transition-transform flex items-center justify-center gap-2"
-                   >
-                     TAP TO OPEN SURPRISE <ExternalLink size={18} />
-                   </button>
-                   <button onClick={() => setBirthdayStep(0)} className="text-white/30 text-[10px] font-bold uppercase tracking-[0.3em] hover:text-white transition-colors">Skip to Dashboard</button>
-                </div>
-             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* --- 🌟 SPOTLIGHT: STAR OF THE MONTH POPUP --- */}
       <AnimatePresence>
-        {showStarPopup && topPerformer && birthdayStep === 0 && (
+        {showStarPopup && topPerformer && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[999] p-4" onClick={() => setShowStarPopup(false)}>
             <motion.div initial={{ scale: 0.8, y: 50 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.8, y: 50, opacity: 0 }} className="bg-gradient-to-b from-[#0f172a] to-[#020617] border border-yellow-500/30 rounded-3xl max-w-sm w-full relative overflow-hidden shadow-[0_0_50px_rgba(234,179,8,0.15)] flex flex-col items-center p-8 text-center" onClick={(e) => e.stopPropagation()}>
               <button onClick={() => setShowStarPopup(false)} className="absolute top-4 right-4 z-10 p-2 bg-black/50 hover:bg-rose-500/80 rounded-full text-white/80 hover:text-white transition-all"><X size={20} /></button>
@@ -534,37 +472,88 @@ export default function StaffDashboard() {
         </div>
       </div>
 
-      {/* LEADERBOARD (No Jaison) */}
-      {leaderboard.length > 0 && (
-        <div className="glass rounded-3xl p-6 border border-yellow-500/20 bg-yellow-500/5">
-           <h3 className="text-lg font-bold text-text-bright mb-5 flex items-center gap-2"><Trophy className="text-yellow-400" size={20} /> Hall of Fame</h3>
-           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              {leaderboard.map((staff, index) => (
-                <div key={staff.uid} className={`flex items-center gap-4 p-4 rounded-2xl border ${index === 0 ? 'bg-yellow-500/10 border-yellow-500/30' : 'bg-white/5 border-white/5'}`}>
-                   <div className="w-12 h-12 rounded-full overflow-hidden border-2 border-white/10 shadow-lg">
-                      {staff.photoURL ? <img src={staff.photoURL} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center bg-slate-800 text-white font-bold">{staff.name[0]}</div>}
-                   </div>
-                   <div className="flex-1 overflow-hidden">
-                      <p className="font-bold text-sm text-text-bright truncate">{staff.name}</p>
-                      <p className="text-[10px] text-text-muted truncate">Top Performer #{index+1}</p>
-                   </div>
+      {/* --- KUDOS WALL --- */}
+      {myKudos.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-3xl p-6 border border-emerald-500/20 bg-emerald-500/5">
+          <div className="flex items-center gap-2 mb-4">
+            <Heart className="text-rose-400 fill-rose-400/20" size={20} />
+            <h3 className="text-lg font-bold text-text-bright">My Kudos Wall</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {myKudos.map(kudos => (
+              <div key={kudos.id} className="bg-white/5 rounded-2xl p-4 border border-white/5 relative overflow-hidden group">
+                <div className="absolute top-0 left-0 w-1 h-full bg-gradient-to-b from-cyan-400 to-violet-400" />
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-xs font-bold px-2 py-1 rounded-full bg-black/30 border border-white/10 text-yellow-400">{kudos.badge}</span>
+                  <ThumbsUp size={14} className="text-text-muted" />
                 </div>
-              ))}
-           </div>
-        </div>
+                <p className="text-sm text-text-bright font-medium mb-3 italic">"{kudos.message}"</p>
+                <p className="text-[10px] text-text-muted flex items-center gap-1">From: <span className="font-bold text-cyan-400">{kudos.senderName}</span></p>
+              </div>
+            ))}
+          </div>
+        </motion.div>
       )}
 
-      {/* RECENT RECORDS */}
+      {/* --- LEADERBOARD --- */}
+      {leaderboard.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-3xl p-6 border border-yellow-500/20 bg-yellow-500/5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-5 gap-2">
+            <h3 className="text-lg font-bold text-text-bright flex items-center gap-2"><Trophy className="text-yellow-400" size={20} /> Top Performers</h3>
+            <span className="text-[10px] bg-yellow-500/20 text-yellow-400 px-3 py-1 rounded-full font-bold">Based on Working Hours</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {leaderboard.map((staff, index) => (
+              <div key={staff.uid} className={`flex items-center gap-4 p-4 rounded-2xl border ${index === 0 ? 'bg-yellow-500/10 border-yellow-500/30' : 'bg-white/5 border-white/5'}`}>
+                <div className="relative flex-shrink-0">
+                  <div className={`w-12 h-12 rounded-full overflow-hidden border-2 flex items-center justify-center font-bold text-lg ${index === 0 ? 'border-yellow-400 bg-[#0f172a] text-white' : 'border-white/10 bg-[#0f172a] text-white'}`}>
+                    {staff.photoURL ? <img src={staff.photoURL} alt={staff.name} className="w-full h-full object-cover" /> : staff.name?.charAt(0).toUpperCase()}
+                  </div>
+                  <div className={`absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${index === 0 ? 'bg-yellow-500 text-black' : 'bg-slate-700 text-white'}`}>{index + 1}</div>
+                </div>
+                <div className="flex-1 overflow-hidden">
+                  <p className="font-bold text-sm text-text-bright truncate">{staff.name}</p>
+                  <p className="text-[10px] text-text-muted truncate">{staff.designation || 'Nexora Team'}</p>
+                  <p className="text-xs font-bold text-emerald-400 mt-0.5">{staff.workTimeStr}</p>
+                </div>
+                {index === 0 && <Award size={24} className="text-yellow-400 flex-shrink-0" />}
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+
+      {/* --- LEAVE STATUS --- */}
+      <AnimatePresence>
+        {myLeaves.length > 0 && (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-2xl p-5 border border-white/5">
+            <h3 className="text-sm font-semibold text-text-bright mb-4 flex items-center gap-2"><Info size={14} className="text-cyan-400" /> My Leave Applications</h3>
+            <div className="space-y-3">
+              {myLeaves.slice(0, 3).map((leave) => (
+                <div key={leave.id} className="bg-white/5 rounded-xl p-3 flex justify-between items-center border border-white/5">
+                  <div>
+                    <p className="text-xs font-bold text-text-bright">{leave.type}</p>
+                    <p className="text-[10px] text-text-muted">{leave.startDate} to {leave.endDate}</p>
+                  </div>
+                  <span className={`px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${leave.status === 'approved' ? 'bg-emerald-500/10 text-emerald-400' : leave.status === 'rejected' ? 'bg-rose-500/10 text-rose-400' : 'bg-amber-500/10 text-amber-400'}`}>{leave.status}</span>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="glass rounded-2xl p-5 overflow-x-auto">
+        <h3 className="text-sm font-semibold text-text-bright mb-4">Recent Attendance</h3>
         <AttendanceTable records={records.slice(0, 5)} />
       </div>
 
-      {/* DEVELOPER CREDIT */}
+      {/* --- 🛡️ DEVELOPER SIGNATURE BADGE --- */}
       <div className="pt-8 pb-4 flex justify-center">
-        <button onClick={() => setShowDevCard(true)} className="group flex items-center gap-2 px-5 py-2 rounded-full bg-white/5 border border-white/5 hover:border-cyan-500/40 transition-all">
-          <Code size={14} className="text-text-muted" />
-          <span className="text-[10px] font-mono text-text-muted tracking-widest">
-            ENGINEERED BY <span className="text-white">JAISON PIOUS</span>
+        <button onClick={() => setShowDevCard(true)} className="group relative flex items-center gap-2 px-5 py-2 rounded-full bg-white/5 border border-white/5 hover:border-cyan-500/40 hover:bg-cyan-500/10 hover:shadow-[0_0_20px_rgba(34,211,238,0.2)] transition-all duration-300">
+          <Code size={14} className="text-text-muted group-hover:text-cyan-400 transition-colors" />
+          <span className="text-[10px] font-mono text-text-muted tracking-widest group-hover:text-white transition-colors">
+            CRAFTED WITH <span className="text-yellow-400 group-hover:animate-pulse">⚡</span> BY JAISON PIOUS
           </span>
         </button>
       </div>
