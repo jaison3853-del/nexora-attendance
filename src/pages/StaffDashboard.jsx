@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Calendar, CheckCircle, Clock, XCircle, Zap } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useClock } from '../hooks/useClock';
-import { getTodayAttendance, getUserAttendance, getAttendanceStats } from '../services/attendanceService';
+import { getTodayAttendance, getUserAttendance } from '../services/attendanceService';
+// 🚀 പുതിയ തീയതി കാൽക്കുലേഷൻ ഫംഗ്ഷനുകൾ ചേർത്തു
+import { format, startOfMonth, eachDayOfInterval, isSunday } from 'date-fns'; 
 import MarkAttendance from '../components/attendance/MarkAttendance';
 import StatCard from '../components/ui/StatCard';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -14,15 +16,12 @@ export default function StaffDashboard() {
   const { date, dateKey } = useClock();
   const [todayRecord, setTodayRecord] = useState(null);
   const [records, setRecords] = useState([]);
-  const [stats, setStats] = useState({ total: 0, present: 0, absent: 0, late: 0, percentage: 0 });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        // ചെറിയൊരു ലോഡിങ് ഡിലേ (മാനുവൽ ഫീൽ കിട്ടാൻ)
         const minLoadTime = new Promise(resolve => setTimeout(resolve, 1000));
-
         const [today, all, _] = await Promise.all([
           getTodayAttendance(user.uid, dateKey),
           getUserAttendance(user.uid),
@@ -31,7 +30,6 @@ export default function StaffDashboard() {
         
         setTodayRecord(today);
         setRecords(all);
-        setStats(getAttendanceStats(all));
       } catch (err) { 
         console.error("Attendance Error:", err); 
       }
@@ -40,6 +38,39 @@ export default function StaffDashboard() {
 
     loadData();
   }, [user.uid, dateKey]);
+
+  // --- 🚀 SMART STATS CALCULATION (Current Month Logic) ---
+  const stats = useMemo(() => {
+    const now = new Date();
+    const start = startOfMonth(now);
+    
+    // ഈ മാസം 1-ആം തീയതി മുതൽ ഇന്നത്തെ ദിവസം വരെയുള്ള ലിസ്റ്റ് എടുക്കുന്നു
+    const days = eachDayOfInterval({ start, end: now });
+
+    let present = 0;
+    let absent = 0;
+    let late = 0;
+    let total = 0;
+
+    days.forEach(day => {
+      if (isSunday(day)) return; // ഞായറാഴ്ചകൾ കണക്കാക്കില്ല (Skip Sundays)
+      
+      total++; // ആകെ വർക്കിംഗ് ദിവസങ്ങൾ
+      const dateStr = format(day, 'yyyy-MM-dd');
+      const record = records.find(r => r.date === dateStr);
+
+      if (record) {
+        if (record.status === 'late') late++;
+        present++; // ലേറ്റ് ആയാലും വന്നതുകൊണ്ട് Present ആയി കൂട്ടും
+      } else {
+        absent++; // റെക്കോർഡ് ഇല്ലെങ്കിൽ ഓട്ടോമാറ്റിക് ആയി Absent!
+      }
+    });
+
+    const percentage = total > 0 ? Math.round((present / total) * 100) : 0;
+    
+    return { total, present, absent, late, percentage };
+  }, [records]);
 
   // --- 🚀 MINIMALIST PULSE LOADER ---
   if (loading) {
