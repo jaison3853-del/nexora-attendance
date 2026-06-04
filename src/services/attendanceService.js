@@ -1,4 +1,3 @@
-// src/services/attendanceService.js
 import {
   collection, addDoc, query, where, orderBy, getDocs,
   onSnapshot, serverTimestamp, doc, getDoc, limit, startAfter,
@@ -77,8 +76,9 @@ export const getAllUsers = async () => {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 };
 
+// 🚀 തിരുത്തിയ ഭാഗം: limit(50) മാറ്റി limit(2000) ആക്കി!
 export const subscribeToAttendance = (callback) => {
-  const q = query(collection(db, 'attendance'), orderBy('createdAt', 'desc'), limit(50));
+  const q = query(collection(db, 'attendance'), orderBy('createdAt', 'desc'), limit(2000));
   return onSnapshot(q, (snap) => {
     const records = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     callback(records);
