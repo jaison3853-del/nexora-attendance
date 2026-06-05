@@ -130,6 +130,23 @@ export default function AdminDashboard() {
     });
   }, [records, users]);
 
+  // --- Real-time Map Update ---
+  useEffect(() => {
+    if (showMapModal && selectedLocation?.uid) {
+      const activeRecord = activeStaff.find(s => s.uid === selectedLocation.uid);
+      if (activeRecord && activeRecord.latitude && activeRecord.longitude) {
+        if (activeRecord.latitude !== selectedLocation.lat || activeRecord.longitude !== selectedLocation.lng) {
+          setSelectedLocation(prev => prev ? ({
+            ...prev,
+            lat: activeRecord.latitude,
+            lng: activeRecord.longitude,
+            locName: activeRecord.locationName || prev.locName
+          }) : null);
+        }
+      }
+    }
+  }, [activeStaff, showMapModal]);
+
   // --- SMART RECORDS & CALENDAR LOGIC ---
   const finalRecords = useMemo(() => {
     let currentRecords = records;
@@ -246,6 +263,7 @@ export default function AdminDashboard() {
   const triggerMapModal = (staffRecord) => {
     if (staffRecord?.latitude && staffRecord?.longitude) {
       setSelectedLocation({
+        uid: staffRecord.uid,
         name: staffRecord.name,
         lat: staffRecord.latitude,
         lng: staffRecord.longitude,
@@ -355,11 +373,18 @@ export default function AdminDashboard() {
                     style={{ top: `${50 + distance * Math.sin(angle * Math.PI / 180)}%`, left: `${50 + distance * Math.cos(angle * Math.PI / 180)}%` }}
                     onClick={() => triggerMapModal(staff)} // Open map view on radar bubble click
                   >
-                    <div className="w-8 h-8 rounded-full border-2 border-cyan-400 p-0.5 bg-black shadow-[0_0_15px_rgba(34,211,238,0.5)] overflow-hidden">
-                      {staff.photoURL ? <img src={staff.photoURL} className="w-full h-full object-cover" /> : <User size={14} className="m-auto text-cyan-400" />}
+                    <div className="relative">
+                      <div className={`w-8 h-8 rounded-full border-2 ${staff.latitude && staff.longitude ? 'border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.5)]' : 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]'} p-0.5 bg-black overflow-hidden`}>
+                        {staff.photoURL ? <img src={staff.photoURL} className="w-full h-full object-cover" /> : <User size={14} className={`m-auto ${staff.latitude && staff.longitude ? 'text-emerald-400' : 'text-cyan-400'}`} />}
+                      </div>
+                      {staff.latitude && staff.longitude && (
+                        <div className="absolute -top-1 -right-1 bg-emerald-500 rounded-full p-0.5 border border-black z-30 shadow-[0_0_10px_rgba(16,185,129,0.8)] flex items-center justify-center">
+                          <MapPin size={8} className="text-black" />
+                        </div>
+                      )}
                     </div>
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-cyan-500 text-black text-[10px] font-black px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 flex items-center gap-1">
-                      {staff.name} <MapPin size={10} />
+                    <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 ${staff.latitude && staff.longitude ? 'bg-emerald-500' : 'bg-cyan-500'} text-black text-[10px] font-black px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 flex items-center gap-1`}>
+                      {staff.name} {staff.latitude && staff.longitude && <MapPin size={10} />}
                     </div>
                   </motion.div>
                 );
