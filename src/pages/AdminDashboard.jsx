@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users, CheckCircle, XCircle, Clock, TrendingUp, Download,
   Search, RefreshCw, Shield, FileText, Check, X, Calendar, User, 
-  PlaneTakeoff, Trophy, Award, AlertCircle, Radio, Navigation
+  PlaneTakeoff, Trophy, Award, AlertCircle, Radio, Navigation, MapPin
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -29,6 +29,10 @@ export default function AdminDashboard() {
     search: '', status: '', date: format(new Date(), 'yyyy-MM-dd'), month: ''
   });
 
+  // 🗺️ GPS MAP TRACKING STATES
+  const [selectedLocation, setSelectedLocation] = useState(null);
+  const [showMapModal, setShowMapModal] = useState(false);
+
   useEffect(() => {
     getAllUsers().then(setUsers);
     const unsubAttendance = subscribeToAttendance((data) => { 
@@ -45,7 +49,7 @@ export default function AdminDashboard() {
   const getInTime = (r) => r?.punchIn || r?.checkIn || r?.timeIn || r?.inTime || r?.time || r?.createdAt || null;
   const getOutTime = (r) => r?.punchOut || r?.punchOutTime || r?.checkOut || r?.timeOut || r?.outTime || null;
 
-  // --- ⏰ TIME FORMATTER (Converts to 12-Hour AM/PM) ---
+  // --- ⏰ TIME FORMATTER ---
   const formatTime12Hr = (val) => {
     if (!val || String(val).includes('--')) return '--:--';
     try {
@@ -167,7 +171,7 @@ export default function AdminDashboard() {
     for (let i = 1; i <= daysCount; i++) {
       const currentDate = new Date(year, month - 1, i);
       const dateStr = format(currentDate, 'yyyy-MM-dd');
-      const dayName = format(currentDate, 'EEE'); // Mon, Tue, etc.
+      const dayName = format(currentDate, 'EEE'); 
       const record = staffRecords.find(r => r.date === dateStr);
       
       let status = record ? (record.status || 'absent').toLowerCase() : 'absent';
@@ -179,7 +183,6 @@ export default function AdminDashboard() {
         else if (currentDate.getDay() === 0) status = 'holiday';
       }
 
-      // Calculate 12-Hour IN and OUT times
       let inTimeStr = '--:--';
       let outTimeStr = '--:--';
       
@@ -204,7 +207,11 @@ export default function AdminDashboard() {
         displayDate: `${format(currentDate, 'dd/MM')} ${dayName}`,
         status, 
         checkIn: inTimeStr,
-        checkOut: outTimeStr
+        checkOut: outTimeStr,
+        // Pass location coordinates for analytics calendar map trigger
+        latitude: record?.latitude || null,
+        longitude: record?.longitude || null,
+        locationName: record?.locationName || 'Unknown'
       });
     }
     return report;
@@ -236,11 +243,70 @@ export default function AdminDashboard() {
 
   const selectedStaffForReport = (filters.search.length >= 2 && filters.month) ? users.find(u => u.name?.toLowerCase().includes(filters.search.toLowerCase())) : null;
 
+  const triggerMapModal = (staffRecord) => {
+    if (staffRecord?.latitude && staffRecord?.longitude) {
+      setSelectedLocation({
+        name: staffRecord.name,
+        lat: staffRecord.latitude,
+        lng: staffRecord.longitude,
+        locName: staffRecord.locationName || 'Office Premises'
+      });
+      setShowMapModal(true);
+    } else {
+      toast.error('No GPS coordinates found for this punch entry');
+    }
+  };
+
   if (loading) return <Loader />;
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-10 px-4">
       
+      {/* --- 🗺️ LIVE GPS TRACKING INSPECTOR MODAL --- */}
+      <AnimatePresence>
+        {showMapModal && selectedLocation && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[9999] p-4" onClick={() => setShowMapModal(false)}>
+            <motion.div initial={{ scale: 0.9, y: 30 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 30, opacity: 0 }} className="bg-[#0f172a] border border-cyan-500/30 rounded-[2.5rem] max-w-3xl w-full p-6 relative overflow-hidden shadow-[0_0_50px_rgba(34,211,238,0.2)]" onClick={e => e.stopPropagation()}>
+              
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-cyan-500/10 rounded-2xl border border-cyan-500/20 text-cyan-400">
+                    <MapPin size={22} className="animate-bounce" />
+                  </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-white font-display">{selectedLocation.name} - Punch Location</h2>
+                    <p className="text-xs text-text-muted font-mono mt-0.5 flex items-center gap-1">
+                      <Navigation size={12} className="text-cyan-400" /> {selectedLocation.locName}
+                    </p>
+                  </div>
+                </div>
+                <button onClick={() => setShowMapModal(false)} className="p-2 bg-white/5 hover:bg-rose-500/20 rounded-full text-white/50 hover:text-white transition-all"><X size={20} /></button>
+              </div>
+
+              {/* 🗺️ INTERACTIVE GOOGLE MAP IFRAME EMBED */}
+              <div className="w-full h-[380px] rounded-2xl overflow-hidden border border-white/10 relative bg-slate-950">
+                <iframe
+                  title="GPS Live View"
+                  width="100%"
+                  height="100%"
+                  frameBorder="0"
+                  scrolling="no"
+                  marginHeight="0"
+                  marginWidth="0"
+                  src={`https://maps.google.com/maps?q=${selectedLocation.lat},${selectedLocation.lng}&z=16&output=embed`}
+                  className="filter invert-[90%] hue-rotate-[180deg] contrast-[100%]" // Sleek Dark Mode Map Theme
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 mt-4 bg-black/40 p-4 rounded-xl border border-white/5 font-mono text-[11px] text-text-muted">
+                <div>LATITUDE: <span className="text-white font-bold">{selectedLocation.lat}</span></div>
+                <div>LONGITUDE: <span className="text-white font-bold">{selectedLocation.lng}</span></div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
@@ -256,7 +322,7 @@ export default function AdminDashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* --- 📡 LIVE OFFICE RADAR --- */}
+        {/* --- 📡 LIVE OFFICE RADAR WITH LOCATION CLICKS --- */}
         <div className="lg:col-span-1 glass rounded-[2rem] p-6 border border-cyan-500/20 bg-[#020617] relative overflow-hidden h-[450px] flex flex-col items-center">
           <div className="absolute top-4 left-6 z-10">
             <h3 className="text-sm font-black text-cyan-400 uppercase tracking-[0.2em] flex items-center gap-2">
@@ -287,12 +353,13 @@ export default function AdminDashboard() {
                     initial={{ opacity: 0, scale: 0 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0 }}
                     className="absolute z-20 group cursor-pointer"
                     style={{ top: `${50 + distance * Math.sin(angle * Math.PI / 180)}%`, left: `${50 + distance * Math.cos(angle * Math.PI / 180)}%` }}
+                    onClick={() => triggerMapModal(staff)} // Open map view on radar bubble click
                   >
                     <div className="w-8 h-8 rounded-full border-2 border-cyan-400 p-0.5 bg-black shadow-[0_0_15px_rgba(34,211,238,0.5)] overflow-hidden">
                       {staff.photoURL ? <img src={staff.photoURL} className="w-full h-full object-cover" /> : <User size={14} className="m-auto text-cyan-400" />}
                     </div>
-                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-cyan-500 text-black text-[10px] font-black px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
-                      {staff.name} (IN)
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-cyan-500 text-black text-[10px] font-black px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 flex items-center gap-1">
+                      {staff.name} <MapPin size={10} />
                     </div>
                   </motion.div>
                 );
@@ -366,16 +433,25 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* --- 📅 UPDATED CALENDAR UI --- */}
+      {/* --- 📅 UPDATED CALENDAR UI WITH MAP CAPABILITY --- */}
       {selectedStaffForReport && (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="glass rounded-[2rem] p-8 border border-violet-500/20 bg-violet-500/5">
           <h3 className="text-xl font-bold text-text-bright mb-6 flex items-center gap-3"><Calendar className="text-violet-400" /> Deep Analytics: {selectedStaffForReport.name}</h3>
           <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-3">
             {getFullMonthReport(selectedStaffForReport.uid, filters.month).map((day) => {
               let color = day.status === 'absent' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20' : day.status === 'leave' ? 'bg-amber-500/20 text-amber-400 border-amber-500/40' : day.status === 'holiday' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : day.status === 'upcoming' ? 'bg-white/5 text-text-muted border-white/10' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+              const hasGPS = day.latitude && day.longitude;
+
               return (
-                <div key={day.date} className={`p-3 rounded-2xl border ${color} transition-all hover:scale-105 flex flex-col justify-between`}>
-                  <p className="text-[10px] opacity-60 font-mono uppercase">{day.displayDate}</p>
+                <div 
+                  key={day.date} 
+                  className={`p-3 rounded-2xl border ${color} transition-all flex flex-col justify-between relative group ${hasGPS ? 'cursor-pointer hover:border-cyan-400' : ''}`}
+                  onClick={() => hasGPS && triggerMapModal({ name: selectedStaffForReport.name, latitude: day.latitude, longitude: day.longitude, locationName: day.locationName })}
+                >
+                  <div className="flex justify-between items-start">
+                    <p className="text-[10px] opacity-60 font-mono uppercase">{day.displayDate}</p>
+                    {hasGPS && <MapPin size={10} className="text-cyan-400 opacity-60 group-hover:opacity-100" />}
+                  </div>
                   <p className="text-xs font-black uppercase mt-1">{day.status === 'holiday' ? 'SUN' : day.status}</p>
                   
                   {/* IN & OUT Times Layout */}
@@ -401,7 +477,49 @@ export default function AdminDashboard() {
             <input type="month" className="bg-white/5 border border-white/10 rounded-2xl px-4 py-3 outline-none focus:border-emerald-500 text-white" value={filters.month} onChange={(e) => setFilters({...filters, month: e.target.value, date: ''})} />
           </div>
         </div>
-        <AttendanceTable records={finalRecords} showUser />
+        
+        {/* Pass custom row clicks or standard components */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="border-b border-white/10 text-text-muted text-xs uppercase tracking-wider">
+                <th className="py-4 px-2">Staff Member</th>
+                <th className="py-4 px-2">Date</th>
+                <th className="py-4 px-2">Status</th>
+                <th className="py-4 px-2">Location Name</th>
+                <th className="py-4 px-2 text-center">GPS Track</th>
+              </tr>
+            </thead>
+            <tbody className="text-sm divide-y divide-white/5 text-text-bright">
+              {finalRecords.map((rec) => (
+                <tr key={rec.id} className="hover:bg-white/[0.02] transition-colors">
+                  <td className="py-4 px-2 font-bold">{rec.name}</td>
+                  <td className="py-4 px-2 font-mono text-xs">{rec.date}</td>
+                  <td className="py-4 px-2">
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                      rec.status === 'present' ? 'bg-emerald-500/10 text-emerald-400' :
+                      rec.status === 'late' ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'
+                    }`}>{rec.status}</span>
+                  </td>
+                  <td className="py-4 px-2 text-text-muted truncate max-w-[180px]">{rec.locationName || 'Office Premises'}</td>
+                  <td className="py-4 px-2 text-center">
+                    {rec.latitude && rec.longitude ? (
+                      <button 
+                        onClick={() => triggerMapModal(rec)}
+                        className="p-2 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 rounded-xl text-cyan-400 transition-all"
+                        title="Open Map View"
+                      >
+                        <MapPin size={14} />
+                      </button>
+                    ) : (
+                      <span className="text-text-muted/30 text-xs">--</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
     </div>
