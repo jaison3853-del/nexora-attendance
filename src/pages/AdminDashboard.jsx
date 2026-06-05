@@ -32,6 +32,7 @@ export default function AdminDashboard() {
   // 🗺️ GPS MAP TRACKING STATES
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [showMapModal, setShowMapModal] = useState(false);
+  const [liveLocations, setLiveLocations] = useState({});
 
   useEffect(() => {
     getAllUsers().then(setUsers);
@@ -43,7 +44,17 @@ export default function AdminDashboard() {
     const unsubLeaves = onSnapshot(qLeaves, (snapshot) => {
       setLeaves(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
-    return () => { unsubAttendance(); unsubLeaves(); };
+    const qLiveLocations = query(collection(db, 'live_locations'));
+    const unsubLiveLocations = onSnapshot(qLiveLocations, (snapshot) => {
+      const locs = {};
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        const uid = data.uid || data.userId || doc.id;
+        locs[uid] = data;
+      });
+      setLiveLocations(locs);
+    });
+    return () => { unsubAttendance(); unsubLeaves(); unsubLiveLocations(); };
   }, []);
 
   const getInTime = (r) => r?.punchIn || r?.checkIn || r?.timeIn || r?.inTime || r?.time || r?.createdAt || null;
@@ -126,9 +137,17 @@ export default function AdminDashboard() {
       return r.date === today && isWorking;
     }).map(r => {
       const user = users.find(u => u.uid === r.uid);
-      return { ...r, photoURL: user?.photoURL, name: user?.name || r.name };
+      const liveLoc = liveLocations[r.uid];
+      return { 
+        ...r, 
+        photoURL: user?.photoURL, 
+        name: user?.name || r.name,
+        latitude: liveLoc?.latitude || liveLoc?.lat || r.latitude,
+        longitude: liveLoc?.longitude || liveLoc?.lng || r.longitude,
+        locationName: liveLoc?.locationName || r.locationName
+      };
     });
-  }, [records, users]);
+  }, [records, users, liveLocations]);
 
   // --- Real-time Map Update ---
   useEffect(() => {
