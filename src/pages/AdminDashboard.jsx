@@ -29,32 +29,36 @@ export default function AdminDashboard() {
     search: '', status: '', date: format(new Date(), 'yyyy-MM-dd'), month: ''
   });
 
-  // 🗺️ GPS MAP TRACKING STATES
+  // 🗺️ GPS MAP TRACKING & LIVE RADAR STATES
+  const [liveLocations, setLiveLocations] = useState([]); // 🚀 24/7 ലൈവ് ലൊക്കേഷൻ ഫീഡ്
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [showMapModal, setShowMapModal] = useState(false);
-  const [liveLocations, setLiveLocations] = useState({});
 
   useEffect(() => {
     getAllUsers().then(setUsers);
+    
+    // 1. Attendance Subscription
     const unsubAttendance = subscribeToAttendance((data) => { 
       setRecords(data); 
       setLoading(false); 
     });
+
+    // 2. Leave Applications Subscription
     const qLeaves = query(collection(db, 'leaves'), orderBy('createdAt', 'desc'));
     const unsubLeaves = onSnapshot(qLeaves, (snapshot) => {
       setLeaves(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
-    const qLiveLocations = query(collection(db, 'live_locations'));
-    const unsubLiveLocations = onSnapshot(qLiveLocations, (snapshot) => {
-      const locs = {};
-      snapshot.docs.forEach(doc => {
-        const data = doc.data();
-        const uid = data.uid || data.userId || doc.id;
-        locs[uid] = data;
-      });
+
+    // 3. 🚀 24/7 LIVE LOCATION RADAR STREAM (ഫയർബേസിൽ നിന്ന് തത്സമയം എടുക്കുന്നു)
+    const qLiveLocs = query(collection(db, 'live_locations'));
+    const unsubLiveLocs = onSnapshot(qLiveLocs, (snapshot) => {
+      const locs = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(loc => loc.isOnline === true); // ഓൺലൈൻ ഉള്ളവരെ മാത്രം റഡാറിൽ കാണിക്കും
       setLiveLocations(locs);
     });
-    return () => { unsubAttendance(); unsubLeaves(); unsubLiveLocations(); };
+
+    return () => { unsubAttendance(); unsubLeaves(); unsubLiveLocs(); };
   }, []);
 
   const getInTime = (r) => r?.punchIn || r?.checkIn || r?.timeIn || r?.inTime || r?.time || r?.createdAt || null;
@@ -128,43 +132,17 @@ export default function AdminDashboard() {
     return monthStats.sort((a, b) => b.totalSecs - a.totalSecs).slice(0, 3);
   }, [records, users, filters.month]);
 
-  // --- 📡 LIVE RADAR LOGIC ---
+  // --- 📡 24/7 LIVE RADAR MAPPING ---
   const activeStaff = useMemo(() => {
-    const today = format(new Date(), 'yyyy-MM-dd');
-    return records.filter(r => {
-      const outVal = getOutTime(r);
-      const isWorking = !outVal || String(outVal).toLowerCase().includes('work');
-      return r.date === today && isWorking;
-    }).map(r => {
-      const user = users.find(u => u.uid === r.uid);
-      const liveLoc = liveLocations[r.uid];
-      return { 
-        ...r, 
-        photoURL: user?.photoURL, 
-        name: user?.name || r.name,
-        latitude: liveLoc?.latitude || liveLoc?.lat || r.latitude,
-        longitude: liveLoc?.longitude || liveLoc?.lng || r.longitude,
-        locationName: liveLoc?.locationName || r.locationName
+    return liveLocations.map(loc => {
+      const userObj = users.find(u => u.uid === loc.uid);
+      return {
+        ...loc,
+        photoURL: userObj?.photoURL,
+        name: userObj?.name || loc.name
       };
     });
-  }, [records, users, liveLocations]);
-
-  // --- Real-time Map Update ---
-  useEffect(() => {
-    if (showMapModal && selectedLocation?.uid) {
-      const activeRecord = activeStaff.find(s => s.uid === selectedLocation.uid);
-      if (activeRecord && activeRecord.latitude && activeRecord.longitude) {
-        if (activeRecord.latitude !== selectedLocation.lat || activeRecord.longitude !== selectedLocation.lng) {
-          setSelectedLocation(prev => prev ? ({
-            ...prev,
-            lat: activeRecord.latitude,
-            lng: activeRecord.longitude,
-            locName: activeRecord.locationName || prev.locName
-          }) : null);
-        }
-      }
-    }
-  }, [activeStaff, showMapModal]);
+  }, [liveLocations, users]);
 
   // --- SMART RECORDS & CALENDAR LOGIC ---
   const finalRecords = useMemo(() => {
@@ -195,7 +173,7 @@ export default function AdminDashboard() {
     });
   }, [records, leaves, users, filters]);
 
-  // --- 📅 FIXED DEEP ANALYTICS REPORT ---
+  // --- 📅 DEEP ANALYTICS REPORT ---
   const getFullMonthReport = (staffId, selectedMonth) => {
     if (!staffId || !selectedMonth) return [];
     const [year, month] = selectedMonth.split('-').map(Number);
@@ -244,7 +222,6 @@ export default function AdminDashboard() {
         status, 
         checkIn: inTimeStr,
         checkOut: outTimeStr,
-        // Pass location coordinates for analytics calendar map trigger
         latitude: record?.latitude || null,
         longitude: record?.longitude || null,
         locationName: record?.locationName || 'Unknown'
@@ -282,15 +259,14 @@ export default function AdminDashboard() {
   const triggerMapModal = (staffRecord) => {
     if (staffRecord?.latitude && staffRecord?.longitude) {
       setSelectedLocation({
-        uid: staffRecord.uid,
         name: staffRecord.name,
         lat: staffRecord.latitude,
         lng: staffRecord.longitude,
-        locName: staffRecord.locationName || 'Office Premises'
+        locName: staffRecord.locationName || 'Field Location'
       });
       setShowMapModal(true);
     } else {
-      toast.error('No GPS coordinates found for this punch entry');
+      toast.error('No Live GPS tracking data available for this member right now');
     }
   };
 
@@ -299,7 +275,7 @@ export default function AdminDashboard() {
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-10 px-4">
       
-      {/* --- 🗺️ LIVE GPS TRACKING INSPECTOR MODAL --- */}
+      {/* --- 🗺️ LIVE 24/7 INTERACTIVE GOOGLE MAP INSPECTOR --- */}
       <AnimatePresence>
         {showMapModal && selectedLocation && (
           <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[9999] p-4" onClick={() => setShowMapModal(false)}>
@@ -311,7 +287,7 @@ export default function AdminDashboard() {
                     <MapPin size={22} className="animate-bounce" />
                   </div>
                   <div>
-                    <h2 className="text-xl font-bold text-white font-display">{selectedLocation.name} - Punch Location</h2>
+                    <h2 className="text-xl font-bold text-white font-display">{selectedLocation.name} - Real-Time Tracking</h2>
                     <p className="text-xs text-text-muted font-mono mt-0.5 flex items-center gap-1">
                       <Navigation size={12} className="text-cyan-400" /> {selectedLocation.locName}
                     </p>
@@ -320,10 +296,9 @@ export default function AdminDashboard() {
                 <button onClick={() => setShowMapModal(false)} className="p-2 bg-white/5 hover:bg-rose-500/20 rounded-full text-white/50 hover:text-white transition-all"><X size={20} /></button>
               </div>
 
-              {/* 🗺️ INTERACTIVE GOOGLE MAP IFRAME EMBED */}
               <div className="w-full h-[380px] rounded-2xl overflow-hidden border border-white/10 relative bg-slate-950">
                 <iframe
-                  title="GPS Live View"
+                  title="GPS Real-Time Feed"
                   width="100%"
                   height="100%"
                   frameBorder="0"
@@ -331,13 +306,13 @@ export default function AdminDashboard() {
                   marginHeight="0"
                   marginWidth="0"
                   src={`https://maps.google.com/maps?q=${selectedLocation.lat},${selectedLocation.lng}&z=16&output=embed`}
-                  className="filter invert-[90%] hue-rotate-[180deg] contrast-[100%]" // Sleek Dark Mode Map Theme
+                  className="filter invert-[90%] hue-rotate-[180deg] contrast-[100%]" 
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4 mt-4 bg-black/40 p-4 rounded-xl border border-white/5 font-mono text-[11px] text-text-muted">
-                <div>LATITUDE: <span className="text-white font-bold">{selectedLocation.lat}</span></div>
-                <div>LONGITUDE: <span className="text-white font-bold">{selectedLocation.lng}</span></div>
+                <div>LIVE LATITUDE: <span className="text-white font-bold">{selectedLocation.lat}</span></div>
+                <div>LIVE LONGITUDE: <span className="text-white font-bold">{selectedLocation.lng}</span></div>
               </div>
             </motion.div>
           </motion.div>
@@ -359,13 +334,13 @@ export default function AdminDashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
-        {/* --- 📡 LIVE OFFICE RADAR WITH LOCATION CLICKS --- */}
+        {/* --- 📡 24/7 REAL-TIME LIVE LOCATION RADAR --- */}
         <div className="lg:col-span-1 glass rounded-[2rem] p-6 border border-cyan-500/20 bg-[#020617] relative overflow-hidden h-[450px] flex flex-col items-center">
           <div className="absolute top-4 left-6 z-10">
             <h3 className="text-sm font-black text-cyan-400 uppercase tracking-[0.2em] flex items-center gap-2">
-              <Radio size={16} className="animate-pulse" /> Live Radar
+              <Radio size={16} className="animate-pulse text-red-500" /> 24/7 Live Tracking
             </h3>
-            <p className="text-[10px] text-text-muted font-mono mt-1">SCANNING OFFICE PREMISES...</p>
+            <p className="text-[10px] text-text-muted font-mono mt-1">STREAMING ACTIVE GPS FEEDS...</p>
           </div>
 
           <div className="relative w-64 h-64 mt-12 md:w-72 md:h-72">
@@ -382,28 +357,21 @@ export default function AdminDashboard() {
 
             <AnimatePresence>
               {activeStaff.map((staff, idx) => {
-                const angle = (idx * 137.5) % 360; 
-                const distance = 30 + (idx * 15) % 60;
+                const angle = (idx * 135) % 360; 
+                const distance = 25 + (idx * 20) % 65;
                 return (
                   <motion.div
                     key={staff.uid}
                     initial={{ opacity: 0, scale: 0 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0 }}
                     className="absolute z-20 group cursor-pointer"
                     style={{ top: `${50 + distance * Math.sin(angle * Math.PI / 180)}%`, left: `${50 + distance * Math.cos(angle * Math.PI / 180)}%` }}
-                    onClick={() => triggerMapModal(staff)} // Open map view on radar bubble click
+                    onClick={() => triggerMapModal(staff)} 
                   >
-                    <div className="relative">
-                      <div className={`w-8 h-8 rounded-full border-2 ${staff.latitude && staff.longitude ? 'border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.5)]' : 'border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.5)]'} p-0.5 bg-black overflow-hidden`}>
-                        {staff.photoURL ? <img src={staff.photoURL} className="w-full h-full object-cover" /> : <User size={14} className={`m-auto ${staff.latitude && staff.longitude ? 'text-emerald-400' : 'text-cyan-400'}`} />}
-                      </div>
-                      {staff.latitude && staff.longitude && (
-                        <div className="absolute -top-1 -right-1 bg-emerald-500 rounded-full p-0.5 border border-black z-30 shadow-[0_0_10px_rgba(16,185,129,0.8)] flex items-center justify-center">
-                          <MapPin size={8} className="text-black" />
-                        </div>
-                      )}
+                    <div className="w-9 h-9 rounded-full border-2 border-cyan-400 p-0.5 bg-black shadow-[0_0_15px_rgba(34,211,238,0.6)] overflow-hidden">
+                      {staff.photoURL ? <img src={staff.photoURL} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-slate-900 text-cyan-400 flex font-bold text-xs"><span className="m-auto">{staff.name?.charAt(0)}</span></div>}
                     </div>
-                    <div className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 ${staff.latitude && staff.longitude ? 'bg-emerald-500' : 'bg-cyan-500'} text-black text-[10px] font-black px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 flex items-center gap-1`}>
-                      {staff.name} {staff.latitude && staff.longitude && <MapPin size={10} />}
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-cyan-500 text-black text-[10px] font-black px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 flex items-center gap-1">
+                      {staff.name} <MapPin size={10} className="animate-bounce" />
                     </div>
                   </motion.div>
                 );
@@ -412,8 +380,8 @@ export default function AdminDashboard() {
           </div>
 
           <div className="mt-auto w-full text-center pb-2">
-            <div className="text-[10px] font-mono text-cyan-400/60 uppercase tracking-widest">Total Active: <span className="text-white text-sm font-bold">{activeStaff.length}</span></div>
-            <div className="flex justify-center gap-1 mt-2">{[0,1,2,3].map(i => <motion.div key={i} animate={{ opacity: [0.2, 1, 0.2] }} transition={{ repeat: Infinity, duration: 1.5, delay: i * 0.3 }} className="w-1 h-1 bg-cyan-400 rounded-full" />)}</div>
+            <div className="text-[10px] font-mono text-cyan-400/60 uppercase tracking-widest">Active Feeds On Map: <span className="text-white text-sm font-bold">{activeStaff.length}</span></div>
+            <div className="flex justify-center gap-1 mt-2">{[0,1,2,3].map(i => <motion.div key={i} animate={{ opacity: [0.2, 1, 0.2] }} transition={{ repeat: Infinity, duration: 1.5, delay: i * 0.3 }} className="w-1 h-1 bg-red-500 rounded-full" />)}</div>
           </div>
         </div>
 
@@ -522,7 +490,6 @@ export default function AdminDashboard() {
           </div>
         </div>
         
-        {/* Pass custom row clicks or standard components */}
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
