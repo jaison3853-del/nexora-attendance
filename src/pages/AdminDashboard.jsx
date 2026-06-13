@@ -496,6 +496,8 @@ export default function AdminDashboard() {
               <tr className="border-b border-white/10 text-text-muted text-xs uppercase tracking-wider">
                 <th className="py-4 px-2">Staff Member</th>
                 <th className="py-4 px-2">Date</th>
+                <th className="py-4 px-2">In Time</th>   {/* 🚀 NEW: IN TIME */}
+                <th className="py-4 px-2">Out Time</th>  {/* 🚀 NEW: OUT TIME */}
                 <th className="py-4 px-2">Status</th>
                 <th className="py-4 px-2">Location Name</th>
                 <th className="py-4 px-2 text-center">GPS Track</th>
@@ -506,6 +508,11 @@ export default function AdminDashboard() {
                 <tr key={rec.id} className="hover:bg-white/[0.02] transition-colors">
                   <td className="py-4 px-2 font-bold">{rec.name}</td>
                   <td className="py-4 px-2 font-mono text-xs">{rec.date}</td>
+                  
+                  {/* 🚀 IN / OUT TIME DATA */}
+                  <td className="py-4 px-2 font-mono text-xs text-emerald-400">{formatTime12Hr(rec.checkIn || getInTime(rec))}</td>
+                  <td className="py-4 px-2 font-mono text-xs text-amber-400">{formatTime12Hr(rec.checkOut)}</td>
+                  
                   <td className="py-4 px-2">
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
                       rec.status === 'present' ? 'bg-emerald-500/10 text-emerald-400' :
