@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users, CheckCircle, XCircle, Clock, TrendingUp, Download,
   Search, RefreshCw, Shield, FileText, Check, X, Calendar, User, 
-  PlaneTakeoff, Trophy, Award, AlertCircle, Radio, Navigation, MapPin
+  PlaneTakeoff, Trophy, Award, AlertCircle, Radio, Navigation, MapPin,
+  UserCog, Edit2, Save
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -30,50 +31,51 @@ export default function AdminDashboard() {
   });
 
   // 🗺️ GPS MAP TRACKING & LIVE RADAR STATES
-  const [liveLocations, setLiveLocations] = useState([]); // 🚀 24/7 ലൈവ് ലൊക്കേഷൻ ഫീഡ്
+  const [liveLocations, setLiveLocations] = useState([]); 
   const [selectedLocation, setSelectedLocation] = useState(null);
   const [showMapModal, setShowMapModal] = useState(false);
 
+  // 👥 STAFF MANAGEMENT STATES
+  const [showStaffManager, setShowStaffManager] = useState(false);
+  const [editingStaff, setEditingStaff] = useState(null);
+
   useEffect(() => {
-    getAllUsers().then(setUsers);
+    const qUsers = query(collection(db, 'users'));
+    const unsubUsers = onSnapshot(qUsers, (snapshot) => {
+      setUsers(snapshot.docs.map(doc => ({ uid: doc.id, ...doc.data() })));
+    });
     
-    // 1. Attendance Subscription
     const unsubAttendance = subscribeToAttendance((data) => { 
       setRecords(data); 
       setLoading(false); 
     });
 
-    // 2. Leave Applications Subscription
     const qLeaves = query(collection(db, 'leaves'), orderBy('createdAt', 'desc'));
     const unsubLeaves = onSnapshot(qLeaves, (snapshot) => {
       setLeaves(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
-    // 3. 🚀 24/7 LIVE LOCATION RADAR STREAM (ഫയർബേസിൽ നിന്ന് തത്സമയം എടുക്കുന്നു)
     const qLiveLocs = query(collection(db, 'live_locations'));
     const unsubLiveLocs = onSnapshot(qLiveLocs, (snapshot) => {
       const locs = snapshot.docs
         .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter(loc => loc.isOnline === true); // ഓൺലൈൻ ഉള്ളവരെ മാത്രം റഡാറിൽ കാണിക്കും
+        .filter(loc => loc.isOnline === true); 
       setLiveLocations(locs);
     });
 
-    return () => { unsubAttendance(); unsubLeaves(); unsubLiveLocs(); };
+    return () => { unsubAttendance(); unsubLeaves(); unsubLiveLocs(); unsubUsers(); };
   }, []);
 
   const getInTime = (r) => r?.punchIn || r?.checkIn || r?.timeIn || r?.inTime || r?.time || r?.createdAt || null;
   const getOutTime = (r) => r?.punchOut || r?.punchOutTime || r?.checkOut || r?.timeOut || r?.outTime || null;
 
-  // --- ⏰ TIME FORMATTER ---
   const formatTime12Hr = (val) => {
     if (!val || String(val).includes('--')) return '--:--';
     try {
       if (typeof val.toDate === 'function') return format(val.toDate(), 'hh:mm a');
       if (val instanceof Date) return format(val, 'hh:mm a');
-      
       const str = String(val).toUpperCase();
       if (str.includes('AM') || str.includes('PM')) return str;
-      
       const match = str.match(/(\d{1,2}):(\d{1,2})/);
       if (match) {
         let h = parseInt(match[1], 10);
@@ -86,7 +88,6 @@ export default function AdminDashboard() {
     return String(val);
   };
 
-  // --- 🏆 SMART LEADERBOARD ---
   const leaderboard = useMemo(() => {
     const currentMonth = filters.month || format(new Date(), 'yyyy-MM');
     const now = new Date();
@@ -132,19 +133,13 @@ export default function AdminDashboard() {
     return monthStats.sort((a, b) => b.totalSecs - a.totalSecs).slice(0, 3);
   }, [records, users, filters.month]);
 
-  // --- 📡 24/7 LIVE RADAR MAPPING ---
   const activeStaff = useMemo(() => {
     return liveLocations.map(loc => {
       const userObj = users.find(u => u.uid === loc.uid);
-      return {
-        ...loc,
-        photoURL: userObj?.photoURL,
-        name: userObj?.name || loc.name
-      };
+      return { ...loc, photoURL: userObj?.photoURL, name: userObj?.name || loc.name };
     });
   }, [liveLocations, users]);
 
-  // --- SMART RECORDS & CALENDAR LOGIC ---
   const finalRecords = useMemo(() => {
     let currentRecords = records;
     if (filters.date) currentRecords = records.filter(r => r.date === filters.date);
@@ -173,7 +168,6 @@ export default function AdminDashboard() {
     });
   }, [records, leaves, users, filters]);
 
-  // --- 📅 DEEP ANALYTICS REPORT ---
   const getFullMonthReport = (staffId, selectedMonth) => {
     if (!staffId || !selectedMonth) return [];
     const [year, month] = selectedMonth.split('-').map(Number);
@@ -187,7 +181,6 @@ export default function AdminDashboard() {
       const dateStr = format(currentDate, 'yyyy-MM-dd');
       const dayName = format(currentDate, 'EEE'); 
       const record = staffRecords.find(r => r.date === dateStr);
-      
       let status = record ? (record.status || 'absent').toLowerCase() : 'absent';
       const approvedLeave = leaves.find(l => l.userId === staffId && l.status === 'approved' && dateStr >= l.startDate && dateStr <= l.endDate);
       
@@ -197,34 +190,23 @@ export default function AdminDashboard() {
         else if (currentDate.getDay() === 0) status = 'holiday';
       }
 
-      let inTimeStr = '--:--';
-      let outTimeStr = '--:--';
+      let inTimeStr = '--:--'; let outTimeStr = '--:--';
       
       if (record) {
          inTimeStr = formatTime12Hr(getInTime(record));
          outTimeStr = formatTime12Hr(getOutTime(record));
-         
          const isPastDay = dateStr !== todayStr;
          const isPast9PM = new Date().getHours() >= 21;
          const outValRaw = getOutTime(record);
          const isWorking = !outValRaw || String(outValRaw).toLowerCase().includes('work');
          
-         if (isWorking && (isPastDay || (dateStr === todayStr && isPast9PM))) {
-             outTimeStr = 'Forgot Out';
-         } else if (isWorking) {
-             outTimeStr = 'Working';
-         }
+         if (isWorking && (isPastDay || (dateStr === todayStr && isPast9PM))) outTimeStr = 'Forgot Out';
+         else if (isWorking) outTimeStr = 'Working';
       }
 
       report.push({ 
-        date: dateStr, 
-        displayDate: `${format(currentDate, 'dd/MM')} ${dayName}`,
-        status, 
-        checkIn: inTimeStr,
-        checkOut: outTimeStr,
-        latitude: record?.latitude || null,
-        longitude: record?.longitude || null,
-        locationName: record?.locationName || 'Unknown'
+        date: dateStr, displayDate: `${format(currentDate, 'dd/MM')} ${dayName}`, status, 
+        checkIn: inTimeStr, checkOut: outTimeStr, latitude: record?.latitude || null, longitude: record?.longitude || null, locationName: record?.locationName || 'Unknown'
       });
     }
     return report;
@@ -258,15 +240,27 @@ export default function AdminDashboard() {
 
   const triggerMapModal = (staffRecord) => {
     if (staffRecord?.latitude && staffRecord?.longitude) {
-      setSelectedLocation({
-        name: staffRecord.name,
-        lat: staffRecord.latitude,
-        lng: staffRecord.longitude,
-        locName: staffRecord.locationName || 'Field Location'
-      });
+      setSelectedLocation({ name: staffRecord.name, lat: staffRecord.latitude, lng: staffRecord.longitude, locName: staffRecord.locationName || 'Field Location' });
       setShowMapModal(true);
     } else {
       toast.error('No Live GPS tracking data available for this member right now');
+    }
+  };
+
+  const handleUpdateStaff = async (e) => {
+    e.preventDefault();
+    try {
+      await updateDoc(doc(db, 'users', editingStaff.uid), {
+        name: editingStaff.name,
+        designation: editingStaff.designation,
+        role: editingStaff.role,
+        photoURL: editingStaff.photoURL || null // 🚀 Photo URL save cheyyunnu
+      });
+      toast.success('Staff profile updated successfully!');
+      setEditingStaff(null);
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to update staff profile.');
     }
   };
 
@@ -275,41 +269,81 @@ export default function AdminDashboard() {
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-10 px-4">
       
+      {/* --- 👥 STAFF MANAGEMENT MODAL --- */}
+      <AnimatePresence>
+        {showStaffManager && (
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[9999] p-4" onClick={() => {setShowStaffManager(false); setEditingStaff(null);}}>
+            <motion.div initial={{ scale: 0.9, y: 30 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 30, opacity: 0 }} className="bg-[#0f172a] border border-cyan-500/30 rounded-[2.5rem] max-w-4xl w-full p-6 relative overflow-hidden shadow-[0_0_50px_rgba(34,211,238,0.2)] max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              
+              <div className="flex justify-between items-start mb-6 shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-violet-500/10 rounded-2xl border border-violet-500/20 text-violet-400"><UserCog size={24} /></div>
+                  <div>
+                    <h2 className="text-2xl font-bold text-white font-display">Staff Management</h2>
+                    <p className="text-xs text-text-muted font-mono mt-0.5">Edit Roles & Designations</p>
+                  </div>
+                </div>
+                <button onClick={() => {setShowStaffManager(false); setEditingStaff(null);}} className="p-2 bg-white/5 hover:bg-rose-500/20 rounded-full text-white/50 hover:text-white transition-all"><X size={20} /></button>
+              </div>
+
+              <div className="overflow-y-auto pr-2 custom-scrollbar flex-1">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {users.map(u => (
+                    <div key={u.uid} className="bg-black/40 border border-white/5 rounded-2xl p-4 flex flex-col justify-between group hover:border-cyan-500/30 transition-all">
+                      {editingStaff?.uid === u.uid ? (
+                        <form onSubmit={handleUpdateStaff} className="space-y-3">
+                          <input type="text" required value={editingStaff.name} onChange={e => setEditingStaff({...editingStaff, name: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-2 text-sm text-white focus:border-cyan-500 outline-none" placeholder="Full Name" />
+                          <input type="text" value={editingStaff.designation || ''} onChange={e => setEditingStaff({...editingStaff, designation: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-2 text-sm text-white focus:border-cyan-500 outline-none" placeholder="Designation (e.g. Video Editor)" />
+                          
+                          {/* 🚀 NEW: PROFILE PHOTO URL INPUT BOX */}
+                          <input type="text" value={editingStaff.photoURL || ''} onChange={e => setEditingStaff({...editingStaff, photoURL: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-2 text-sm text-white focus:border-cyan-500 outline-none" placeholder="Profile Photo URL (Link)" />
+                          
+                          <select value={editingStaff.role || 'staff'} onChange={e => setEditingStaff({...editingStaff, role: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-xl p-2 text-sm text-white focus:border-cyan-500 outline-none">
+                            <option value="staff" className="bg-slate-900">Staff</option>
+                            <option value="admin" className="bg-slate-900">Admin</option>
+                          </select>
+                          <div className="flex gap-2 pt-2">
+                            <button type="submit" className="flex-1 bg-emerald-500/20 text-emerald-400 font-bold py-2 rounded-xl border border-emerald-500/30 flex justify-center items-center gap-2 hover:bg-emerald-500/30"><Save size={14}/> Save</button>
+                            <button type="button" onClick={() => setEditingStaff(null)} className="px-4 bg-rose-500/10 text-rose-400 rounded-xl hover:bg-rose-500/20"><X size={16}/></button>
+                          </div>
+                        </form>
+                      ) : (
+                        <>
+                          <div className="flex items-start gap-3">
+                            <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-cyan-500 to-violet-500 p-0.5 shrink-0"><div className="w-full h-full bg-[#0f172a] rounded-full flex items-center justify-center font-bold text-lg text-white overflow-hidden">{u.photoURL ? <img src={u.photoURL} className="w-full h-full object-cover" /> : u.name?.charAt(0).toUpperCase()}</div></div>
+                            <div className="flex-1 overflow-hidden">
+                              <h3 className="font-bold text-white text-sm truncate">{u.name}</h3>
+                              <p className="text-[10px] text-cyan-400 font-mono mt-0.5">{u.designation || 'No Designation'}</p>
+                              <span className={`inline-block mt-1 px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-widest ${u.role === 'admin' ? 'bg-violet-500/20 text-violet-400 border border-violet-500/30' : 'bg-white/5 text-text-muted border border-white/10'}`}>{u.role || 'Staff'}</span>
+                            </div>
+                            <button onClick={() => setEditingStaff(u)} className="p-2 bg-white/5 hover:bg-cyan-500/20 text-text-muted hover:text-cyan-400 rounded-xl transition-colors"><Edit2 size={16} /></button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* --- 🗺️ LIVE 24/7 INTERACTIVE GOOGLE MAP INSPECTOR --- */}
       <AnimatePresence>
         {showMapModal && selectedLocation && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[9999] p-4" onClick={() => setShowMapModal(false)}>
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[9998] p-4" onClick={() => setShowMapModal(false)}>
             <motion.div initial={{ scale: 0.9, y: 30 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 30, opacity: 0 }} className="bg-[#0f172a] border border-cyan-500/30 rounded-[2.5rem] max-w-3xl w-full p-6 relative overflow-hidden shadow-[0_0_50px_rgba(34,211,238,0.2)]" onClick={e => e.stopPropagation()}>
-              
               <div className="flex justify-between items-start mb-4">
                 <div className="flex items-center gap-3">
-                  <div className="p-2.5 bg-cyan-500/10 rounded-2xl border border-cyan-500/20 text-cyan-400">
-                    <MapPin size={22} className="animate-bounce" />
-                  </div>
-                  <div>
-                    <h2 className="text-xl font-bold text-white font-display">{selectedLocation.name} - Real-Time Tracking</h2>
-                    <p className="text-xs text-text-muted font-mono mt-0.5 flex items-center gap-1">
-                      <Navigation size={12} className="text-cyan-400" /> {selectedLocation.locName}
-                    </p>
-                  </div>
+                  <div className="p-2.5 bg-cyan-500/10 rounded-2xl border border-cyan-500/20 text-cyan-400"><MapPin size={22} className="animate-bounce" /></div>
+                  <div><h2 className="text-xl font-bold text-white font-display">{selectedLocation.name} - Real-Time Tracking</h2><p className="text-xs text-text-muted font-mono mt-0.5 flex items-center gap-1"><Navigation size={12} className="text-cyan-400" /> {selectedLocation.locName}</p></div>
                 </div>
                 <button onClick={() => setShowMapModal(false)} className="p-2 bg-white/5 hover:bg-rose-500/20 rounded-full text-white/50 hover:text-white transition-all"><X size={20} /></button>
               </div>
-
               <div className="w-full h-[380px] rounded-2xl overflow-hidden border border-white/10 relative bg-slate-950">
-                <iframe
-                  title="GPS Real-Time Feed"
-                  width="100%"
-                  height="100%"
-                  frameBorder="0"
-                  scrolling="no"
-                  marginHeight="0"
-                  marginWidth="0"
-                  src={`https://maps.google.com/maps?q=${selectedLocation.lat},${selectedLocation.lng}&z=16&output=embed`}
-                  className="filter invert-[90%] hue-rotate-[180deg] contrast-[100%]" 
-                />
+                <iframe title="GPS Real-Time Feed" width="100%" height="100%" frameBorder="0" scrolling="no" marginHeight="0" marginWidth="0" src={`https://maps.google.com/maps?q=${selectedLocation.lat},${selectedLocation.lng}&z=16&output=embed`} className="filter invert-[90%] hue-rotate-[180deg] contrast-[100%]" />
               </div>
-
               <div className="grid grid-cols-2 gap-4 mt-4 bg-black/40 p-4 rounded-xl border border-white/5 font-mono text-[11px] text-text-muted">
                 <div>LIVE LATITUDE: <span className="text-white font-bold">{selectedLocation.lat}</span></div>
                 <div>LIVE LONGITUDE: <span className="text-white font-bold">{selectedLocation.lng}</span></div>
@@ -327,13 +361,17 @@ export default function AdminDashboard() {
           </h1>
           <p className="text-text-muted">Commanding Nexora SM Operations | Jaison Pious</p>
         </div>
-        <button onClick={exportMonthlySummary} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-6 rounded-2xl shadow-lg flex items-center gap-2 transition-all">
-          <Download size={18} /> Export Payroll
-        </button>
+        <div className="flex gap-3">
+          <button onClick={() => setShowStaffManager(true)} className="bg-violet-600/20 hover:bg-violet-600/40 border border-violet-500/30 text-violet-400 font-bold py-3 px-5 rounded-2xl flex items-center gap-2 transition-all">
+            <Users size={18} /> Manage Team
+          </button>
+          <button onClick={exportMonthlySummary} className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-6 rounded-2xl shadow-lg flex items-center gap-2 transition-all">
+            <Download size={18} /> Export Payroll
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
         {/* --- 📡 24/7 REAL-TIME LIVE LOCATION RADAR --- */}
         <div className="lg:col-span-1 glass rounded-[2rem] p-6 border border-cyan-500/20 bg-[#020617] relative overflow-hidden h-[450px] flex flex-col items-center">
           <div className="absolute top-4 left-6 z-10">
@@ -349,24 +387,14 @@ export default function AdminDashboard() {
             <div className="absolute inset-12 border border-cyan-500/10 rounded-full" />
             <div className="absolute inset-24 border border-cyan-500/10 rounded-full" />
             
-            <motion.div 
-              animate={{ rotate: 360 }} transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
-              className="absolute inset-0 rounded-full bg-gradient-to-r from-cyan-500/20 to-transparent origin-center"
-              style={{ clipPath: 'polygon(50% 50%, 100% 50%, 100% 0)' }}
-            />
+            <motion.div animate={{ rotate: 360 }} transition={{ duration: 4, repeat: Infinity, ease: "linear" }} className="absolute inset-0 rounded-full bg-gradient-to-r from-cyan-500/20 to-transparent origin-center" style={{ clipPath: 'polygon(50% 50%, 100% 50%, 100% 0)' }} />
 
             <AnimatePresence>
               {activeStaff.map((staff, idx) => {
                 const angle = (idx * 135) % 360; 
                 const distance = 25 + (idx * 20) % 65;
                 return (
-                  <motion.div
-                    key={staff.uid}
-                    initial={{ opacity: 0, scale: 0 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0 }}
-                    className="absolute z-20 group cursor-pointer"
-                    style={{ top: `${50 + distance * Math.sin(angle * Math.PI / 180)}%`, left: `${50 + distance * Math.cos(angle * Math.PI / 180)}%` }}
-                    onClick={() => triggerMapModal(staff)} 
-                  >
+                  <motion.div key={staff.uid} initial={{ opacity: 0, scale: 0 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0 }} className="absolute z-20 group cursor-pointer" style={{ top: `${50 + distance * Math.sin(angle * Math.PI / 180)}%`, left: `${50 + distance * Math.cos(angle * Math.PI / 180)}%` }} onClick={() => triggerMapModal(staff)} >
                     <div className="w-9 h-9 rounded-full border-2 border-cyan-400 p-0.5 bg-black shadow-[0_0_15px_rgba(34,211,238,0.6)] overflow-hidden">
                       {staff.photoURL ? <img src={staff.photoURL} className="w-full h-full object-cover" /> : <div className="w-full h-full bg-slate-900 text-cyan-400 flex font-bold text-xs"><span className="m-auto">{staff.name?.charAt(0)}</span></div>}
                     </div>
@@ -455,18 +483,13 @@ export default function AdminDashboard() {
               const hasGPS = day.latitude && day.longitude;
 
               return (
-                <div 
-                  key={day.date} 
-                  className={`p-3 rounded-2xl border ${color} transition-all flex flex-col justify-between relative group ${hasGPS ? 'cursor-pointer hover:border-cyan-400' : ''}`}
-                  onClick={() => hasGPS && triggerMapModal({ name: selectedStaffForReport.name, latitude: day.latitude, longitude: day.longitude, locationName: day.locationName })}
-                >
+                <div key={day.date} className={`p-3 rounded-2xl border ${color} transition-all flex flex-col justify-between relative group ${hasGPS ? 'cursor-pointer hover:border-cyan-400' : ''}`} onClick={() => hasGPS && triggerMapModal({ name: selectedStaffForReport.name, latitude: day.latitude, longitude: day.longitude, locationName: day.locationName })} >
                   <div className="flex justify-between items-start">
                     <p className="text-[10px] opacity-60 font-mono uppercase">{day.displayDate}</p>
                     {hasGPS && <MapPin size={10} className="text-cyan-400 opacity-60 group-hover:opacity-100" />}
                   </div>
                   <p className="text-xs font-black uppercase mt-1">{day.status === 'holiday' ? 'SUN' : day.status}</p>
                   
-                  {/* IN & OUT Times Layout */}
                   {(day.status === 'present' || day.status === 'late') && (
                     <div className="mt-2 space-y-0.5 border-t border-current/10 pt-1">
                        <p className="text-[9px] font-mono opacity-90">IN: <span className="font-bold">{day.checkIn}</span></p>
@@ -496,8 +519,8 @@ export default function AdminDashboard() {
               <tr className="border-b border-white/10 text-text-muted text-xs uppercase tracking-wider">
                 <th className="py-4 px-2">Staff Member</th>
                 <th className="py-4 px-2">Date</th>
-                <th className="py-4 px-2">In Time</th>   {/* 🚀 NEW: IN TIME */}
-                <th className="py-4 px-2">Out Time</th>  {/* 🚀 NEW: OUT TIME */}
+                <th className="py-4 px-2">In Time</th>
+                <th className="py-4 px-2">Out Time</th>
                 <th className="py-4 px-2">Status</th>
                 <th className="py-4 px-2">Location Name</th>
                 <th className="py-4 px-2 text-center">GPS Track</th>
@@ -508,11 +531,8 @@ export default function AdminDashboard() {
                 <tr key={rec.id} className="hover:bg-white/[0.02] transition-colors">
                   <td className="py-4 px-2 font-bold">{rec.name}</td>
                   <td className="py-4 px-2 font-mono text-xs">{rec.date}</td>
-                  
-                  {/* 🚀 IN / OUT TIME DATA */}
                   <td className="py-4 px-2 font-mono text-xs text-emerald-400">{formatTime12Hr(rec.checkIn || getInTime(rec))}</td>
                   <td className="py-4 px-2 font-mono text-xs text-amber-400">{formatTime12Hr(rec.checkOut)}</td>
-                  
                   <td className="py-4 px-2">
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
                       rec.status === 'present' ? 'bg-emerald-500/10 text-emerald-400' :
@@ -522,11 +542,7 @@ export default function AdminDashboard() {
                   <td className="py-4 px-2 text-text-muted truncate max-w-[180px]">{rec.locationName || 'Office Premises'}</td>
                   <td className="py-4 px-2 text-center">
                     {rec.latitude && rec.longitude ? (
-                      <button 
-                        onClick={() => triggerMapModal(rec)}
-                        className="p-2 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 rounded-xl text-cyan-400 transition-all"
-                        title="Open Map View"
-                      >
+                      <button onClick={() => triggerMapModal(rec)} className="p-2 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 rounded-xl text-cyan-400 transition-all" title="Open Map View">
                         <MapPin size={14} />
                       </button>
                     ) : (
